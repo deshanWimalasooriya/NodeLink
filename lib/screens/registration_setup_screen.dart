@@ -1,5 +1,5 @@
+import 'dart:async';
 import 'dart:io';
-import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -28,8 +28,60 @@ class _RegistrationSetupScreenState extends State<RegistrationSetupScreen> {
   Uint8List? _pickedImageBytes;
   bool _isLoading = false;
 
+  // Live Username Validation & Suggestions
+  Timer? _usernameDebounce;
+  bool _isCheckingUsername = false;
+  bool _isUsernameTaken = false;
+  List<String> _usernameSuggestions = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _usernameController.addListener(_onUsernameChanged);
+  }
+
+  void _onUsernameChanged() {
+    _usernameDebounce?.cancel();
+    final text = _usernameController.text.trim();
+
+    if (text.isEmpty || text.length < 3) {
+      if (_isUsernameTaken || _usernameSuggestions.isNotEmpty || _isCheckingUsername) {
+        setState(() {
+          _isUsernameTaken = false;
+          _isCheckingUsername = false;
+          _usernameSuggestions = [];
+        });
+      }
+      return;
+    }
+
+    _usernameDebounce = Timer(const Duration(milliseconds: 500), () async {
+      setState(() => _isCheckingUsername = true);
+      final taken = await FirebaseSyncService.isUsernameTaken(text);
+      if (!mounted) return;
+
+      if (taken) {
+        final suggestions = await FirebaseSyncService.generateAvailableSuggestions(text);
+        if (!mounted) return;
+        setState(() {
+          _isCheckingUsername = false;
+          _isUsernameTaken = true;
+          _usernameSuggestions = suggestions;
+        });
+      } else {
+        setState(() {
+          _isCheckingUsername = false;
+          _isUsernameTaken = false;
+          _usernameSuggestions = [];
+        });
+      }
+    });
+  }
+
   @override
   void dispose() {
+    _usernameDebounce?.cancel();
+    _usernameController.removeListener(_onUsernameChanged);
     _usernameController.dispose();
     _phoneController.dispose();
     super.dispose();
@@ -129,17 +181,23 @@ class _RegistrationSetupScreenState extends State<RegistrationSetupScreen> {
     }
   }
 
-  /// Generate unique 6-digit Node ID (100000 - 999999)
-  /// Generate unique 6-digit Node ID (100000 - 999999)
+  /// Generate secure 16-character alphanumeric cryptographic Node ID
   String _generateUniqueNodeId() {
-    final random = Random();
-    final p1 = 100 + random.nextInt(900);
-    final p2 = 100 + random.nextInt(900);
-    return '$p1$p2';
+    return FirebaseSyncService.generateSecureNodeId();
   }
 
   /// Handle "CONTINUE TO DASHBOARD"
   Future<void> _handleContinue() async {
+    if (_isUsernameTaken) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please choose an available username before continuing'),
+          backgroundColor: AppTheme.warningRed,
+        ),
+      );
+      return;
+    }
+
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -233,8 +291,10 @@ class _RegistrationSetupScreenState extends State<RegistrationSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isLight = Theme.of(context).brightness == Brightness.light;
+
     return Scaffold(
-      backgroundColor: AppTheme.deepNavy,
+      backgroundColor: isLight ? AppTheme.lightBg : AppTheme.deepNavy,
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -503,12 +563,12 @@ class _RegistrationSetupScreenState extends State<RegistrationSetupScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     // 1. Username Label
-                                    const Text(
+                                    Text(
                                       'Username',
                                       style: TextStyle(
                                         fontSize: 14,
                                         fontWeight: FontWeight.w700,
-                                        color: Colors.white,
+                                        color: isLight ? AppTheme.lightTextPrimary : Colors.white,
                                       ),
                                     ),
                                     const SizedBox(height: 8),
@@ -516,8 +576,8 @@ class _RegistrationSetupScreenState extends State<RegistrationSetupScreen> {
                                     // Username Input Field
                                     TextFormField(
                                       controller: _usernameController,
-                                      style: const TextStyle(
-                                        color: Colors.white,
+                                      style: TextStyle(
+                                        color: isLight ? AppTheme.lightTextPrimary : Colors.white,
                                         fontSize: 15,
                                         fontWeight: FontWeight.w600,
                                       ),
@@ -525,16 +585,22 @@ class _RegistrationSetupScreenState extends State<RegistrationSetupScreen> {
                                       decoration: InputDecoration(
                                         hintText: 'Enter Username',
                                         hintStyle: TextStyle(
-                                          color: Colors.white.withValues(alpha: 0.35),
+                                          color: isLight
+                                              ? AppTheme.lightTextMuted
+                                              : Colors.white.withValues(alpha: 0.35),
                                           fontSize: 14,
                                         ),
                                         prefixIcon: Icon(
                                           Icons.person_rounded,
-                                          color: Colors.white.withValues(alpha: 0.5),
+                                          color: isLight
+                                              ? AppTheme.lightTextSecondary
+                                              : Colors.white.withValues(alpha: 0.5),
                                           size: 20,
                                         ),
                                         filled: true,
-                                        fillColor: const Color(0xFF0F172A).withValues(alpha: 0.65),
+                                        fillColor: isLight
+                                            ? const Color(0xFFF1F5F9)
+                                            : const Color(0xFF0F172A).withValues(alpha: 0.65),
                                         contentPadding: const EdgeInsets.symmetric(
                                           horizontal: 16,
                                           vertical: 14,
@@ -542,26 +608,39 @@ class _RegistrationSetupScreenState extends State<RegistrationSetupScreen> {
                                         border: OutlineInputBorder(
                                           borderRadius: BorderRadius.circular(16),
                                           borderSide: BorderSide(
-                                            color: Colors.white.withValues(alpha: 0.12),
+                                            color: _isUsernameTaken
+                                                ? AppTheme.warningRed
+                                                : (isLight
+                                                    ? AppTheme.lightBorder
+                                                    : Colors.white.withValues(alpha: 0.12)),
+                                            width: _isUsernameTaken ? 1.6 : 1.0,
                                           ),
                                         ),
                                         enabledBorder: OutlineInputBorder(
                                           borderRadius: BorderRadius.circular(16),
                                           borderSide: BorderSide(
-                                            color: Colors.white.withValues(alpha: 0.12),
+                                            color: _isUsernameTaken
+                                                ? AppTheme.warningRed
+                                                : (isLight
+                                                    ? AppTheme.lightBorder
+                                                    : Colors.white.withValues(alpha: 0.12)),
+                                            width: _isUsernameTaken ? 1.6 : 1.0,
                                           ),
                                         ),
                                         focusedBorder: OutlineInputBorder(
                                           borderRadius: BorderRadius.circular(16),
-                                          borderSide: const BorderSide(
-                                            color: AppTheme.electricCyan,
-                                            width: 1.5,
+                                          borderSide: BorderSide(
+                                            color: _isUsernameTaken
+                                                ? AppTheme.warningRed
+                                                : AppTheme.electricCyan,
+                                            width: 1.8,
                                           ),
                                         ),
                                         errorBorder: OutlineInputBorder(
                                           borderRadius: BorderRadius.circular(16),
                                           borderSide: const BorderSide(
                                             color: AppTheme.warningRed,
+                                            width: 1.6,
                                           ),
                                         ),
                                       ),
@@ -569,9 +648,99 @@ class _RegistrationSetupScreenState extends State<RegistrationSetupScreen> {
                                         if (value == null || value.trim().isEmpty) {
                                           return 'Please enter your username';
                                         }
+                                        if (_isUsernameTaken) {
+                                          return 'This username is already taken.';
+                                        }
                                         return null;
                                       },
                                     ),
+
+                                    // Live Feedback & Smart Suggestions
+                                    if (_isCheckingUsername) ...[
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        children: [
+                                          const SizedBox(
+                                            width: 12,
+                                            height: 12,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 1.5,
+                                              color: AppTheme.electricCyan,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Text(
+                                            'Checking username availability...',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: isLight
+                                                  ? AppTheme.lightTextSecondary
+                                                  : AppTheme.textSecondary,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                    if (_isUsernameTaken) ...[
+                                      const SizedBox(height: 6),
+                                      const Text(
+                                        'This username is already taken.',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppTheme.warningRed,
+                                        ),
+                                      ),
+                                      if (_usernameSuggestions.isNotEmpty) ...[
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'Available suggestions:',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: isLight
+                                                ? AppTheme.lightTextSecondary
+                                                : AppTheme.textSecondary,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Wrap(
+                                          spacing: 8,
+                                          runSpacing: 6,
+                                          children: _usernameSuggestions.map((suggestion) {
+                                            return FilterChip(
+                                              label: Text(
+                                                suggestion,
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: isLight
+                                                      ? AppTheme.deepNavy
+                                                      : Colors.white,
+                                                ),
+                                              ),
+                                              backgroundColor: isLight
+                                                  ? const Color(0xFFE2E8F0)
+                                                  : AppTheme.spaceIndigo.withValues(alpha: 0.8),
+                                              side: BorderSide(
+                                                color: AppTheme.electricCyan.withValues(alpha: 0.6),
+                                                width: 1.0,
+                                              ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius: BorderRadius.circular(16),
+                                              ),
+                                              onSelected: (_) {
+                                                _usernameController.text = suggestion;
+                                                _usernameController.selection =
+                                                    TextSelection.fromPosition(
+                                                  TextPosition(offset: suggestion.length),
+                                                );
+                                              },
+                                            );
+                                          }).toList(),
+                                        ),
+                                      ],
+                                    ],
 
                                     const SizedBox(height: 18),
 

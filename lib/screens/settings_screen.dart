@@ -5,6 +5,7 @@ import '../core/widgets/cyber_card.dart';
 import '../core/widgets/cyber_button.dart';
 import '../core/widgets/cyber_app_bar.dart';
 import '../core/widgets/cyber_toggle.dart';
+import '../core/widgets/map_theme_dialog.dart';
 import '../models/tracking_settings.dart';
 import '../providers/node_link_provider.dart';
 
@@ -24,19 +25,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _localSettings = context.read<NodeLinkProvider>().settings;
   }
 
+  String _getMapThemeDisplayName(AppMapTheme theme) {
+    switch (theme) {
+      case AppMapTheme.auto:
+        return 'Auto (Theme)';
+      case AppMapTheme.darkMatter:
+        return 'Default Dark';
+      case AppMapTheme.cartoLight:
+        return 'Default Light';
+      case AppMapTheme.satellite:
+        return 'Satellite';
+      case AppMapTheme.street:
+        return 'Street';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<NodeLinkProvider>();
+    final isLight = Theme.of(context).brightness == Brightness.light;
+    final textColor = isLight ? const Color(0xFF0F172A) : Colors.white;
+    final subtitleColor = isLight ? const Color(0xFF0284C7) : AppTheme.electricCyan;
 
     return Scaffold(
-      backgroundColor: AppTheme.deepNavy,
+      backgroundColor: isLight ? const Color(0xFFF1F5F9) : AppTheme.deepNavy,
       appBar: CyberAppBar(
         titleText: 'NodeLink',
         actions: [
           CyberCircleIconButton(
             icon: Icons.help_outline_rounded,
             iconSize: 20,
-            iconColor: AppTheme.textSecondary,
+            iconColor: isLight ? const Color(0xFF64748B) : AppTheme.textSecondary,
             onTap: () {
               _showHelpDialog();
             },
@@ -50,16 +69,64 @@ class _SettingsScreenState extends State<SettingsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 10),
-            const Text(
+            Text(
               'Settings',
               style: TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.w800,
-                color: Colors.white,
+                color: textColor,
                 letterSpacing: 0.5,
               ),
             ),
             const SizedBox(height: 18),
+
+            // Card 0: App Preferences (Appearance & Theme)
+            CyberCard(
+              borderRadius: 24,
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.palette_rounded, color: AppTheme.electricCyan, size: 22),
+                      const SizedBox(width: 8),
+                      Text(
+                        'App Preferences',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: textColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Appearance & Theming',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: subtitleColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  _buildSwitchRow(
+                    title: 'Dark / Light Mode',
+                    subtitle: provider.themeMode == ThemeMode.dark
+                        ? 'Currently Cyber-Dark Mode'
+                        : 'Currently Light Mode',
+                    value: provider.themeMode == ThemeMode.dark,
+                    onChanged: (val) {
+                      provider.toggleThemeMode();
+                    },
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
 
             // Card 1: Battery & Polling Options
             CyberCard(
@@ -69,25 +136,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    children: const [
-                      Icon(Icons.battery_charging_full_rounded, color: AppTheme.neonGreen, size: 22),
-                      SizedBox(width: 8),
+                    children: [
+                      const Icon(Icons.battery_charging_full_rounded, color: AppTheme.neonGreen, size: 22),
+                      const SizedBox(width: 8),
                       Text(
                         'Battery & Polling Options',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
-                          color: Colors.white,
+                          color: textColor,
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 4),
-                  const Text(
+                  Text(
                     'Smart Tracking Intervals',
                     style: TextStyle(
                       fontSize: 12,
-                      color: AppTheme.electricCyan,
+                      color: subtitleColor,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -97,12 +164,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Expanded(
+                      Expanded(
                         child: Text(
                           'Active Mode (While Moving)',
                           style: TextStyle(
                             fontSize: 13,
-                            color: Colors.white,
+                            color: isLight ? const Color(0xFF1E293B) : Colors.white,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -128,12 +195,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Expanded(
+                      Expanded(
                         child: Text(
                           'Sleep Mode (When Still)',
                           style: TextStyle(
                             fontSize: 13,
-                            color: Colors.white,
+                            color: isLight ? const Color(0xFF1E293B) : Colors.white,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -161,21 +228,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     children: [
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
+                        children: [
                           Text(
                             'Low Battery Saver',
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
-                              color: Colors.white,
+                              color: isLight ? const Color(0xFF1E293B) : Colors.white,
                             ),
                           ),
-                          SizedBox(height: 2),
+                          const SizedBox(height: 2),
                           Text(
                             'Reduce frequency under 15%',
                             style: TextStyle(
                               fontSize: 11,
-                              color: AppTheme.electricCyan,
+                              color: subtitleColor,
                             ),
                           ),
                         ],
@@ -204,15 +271,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    children: const [
-                      Icon(Icons.notifications_active_rounded, color: AppTheme.electricCyan, size: 22),
-                      SizedBox(width: 8),
+                    children: [
+                      const Icon(Icons.notifications_active_rounded, color: AppTheme.electricCyan, size: 22),
+                      const SizedBox(width: 8),
                       Text(
                         'Notifications',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
-                          color: Colors.white,
+                          color: textColor,
                         ),
                       ),
                     ],
@@ -257,45 +324,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    children: const [
-                      Icon(Icons.map_rounded, color: AppTheme.cyberTeal, size: 22),
-                      SizedBox(width: 8),
+                    children: [
+                      const Icon(Icons.map_rounded, color: AppTheme.cyberTeal, size: 22),
+                      const SizedBox(width: 8),
                       Text(
                         'Map Preferences',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
-                          color: Colors.white,
+                          color: textColor,
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 14),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: const [
-                      Text(
-                        'Map Display Style',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
-                        ),
-                      ),
-                      Row(
-                        children: [
-                          Text(
-                            'Cyber-Dark Mode',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: AppTheme.electricCyan,
-                            ),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => MapThemeDialog.show(context),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Map Display Style',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: isLight ? const Color(0xFF1E293B) : Colors.white,
                           ),
-                          Icon(Icons.chevron_right_rounded, color: AppTheme.electricCyan, size: 18),
-                        ],
-                      ),
-                    ],
+                        ),
+                        Row(
+                          children: [
+                            Text(
+                              _getMapThemeDisplayName(provider.mapTheme),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: AppTheme.electricCyan,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(Icons.chevron_right_rounded, color: AppTheme.electricCyan, size: 18),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 14),
                   _buildSwitchRow(
@@ -319,15 +391,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    children: const [
-                      Icon(Icons.security_rounded, color: AppTheme.cyberBlue, size: 22),
-                      SizedBox(width: 8),
+                    children: [
+                      const Icon(Icons.security_rounded, color: AppTheme.cyberBlue, size: 22),
+                      const SizedBox(width: 8),
                       Text(
                         'Privacy & Security',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
-                          color: Colors.white,
+                          color: textColor,
                         ),
                       ),
                     ],
@@ -374,12 +446,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
 
             const SizedBox(height: 16),
-            const Center(
+            Center(
               child: Text(
                 'NodeLink App Version 1.0.2',
                 style: TextStyle(
                   fontSize: 12,
-                  color: AppTheme.textMuted,
+                  color: isLight ? const Color(0xFF64748B) : AppTheme.textMuted,
                   letterSpacing: 0.5,
                 ),
               ),
@@ -397,6 +469,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required bool value,
     required ValueChanged<bool> onChanged,
   }) {
+    final isLight = Theme.of(context).brightness == Brightness.light;
+    final titleColor = isLight ? const Color(0xFF1E293B) : Colors.white;
+    final subtitleColor = isLight ? const Color(0xFF0284C7) : AppTheme.electricCyan;
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -406,19 +482,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  color: titleColor,
                 ),
               ),
               if (subtitle != null) ...[
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
-                    color: AppTheme.electricCyan,
+                    color: subtitleColor,
                   ),
                 ),
               ],
@@ -438,13 +514,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required int selectedValue,
     required ValueChanged<int> onSelected,
   }) {
+    final isLight = Theme.of(context).brightness == Brightness.light;
+
     return Container(
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: AppTheme.deepNavy.withValues(alpha: 0.6),
+        color: isLight ? const Color(0xFFF1F5F9) : AppTheme.deepNavy.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: AppTheme.electricCyan.withValues(alpha: 0.2),
+          color: isLight ? const Color(0xFFCBD5E1) : AppTheme.electricCyan.withValues(alpha: 0.2),
           width: 0.8,
         ),
       ),
@@ -467,7 +545,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w800,
-                  color: isSelected ? AppTheme.deepNavy : AppTheme.textSecondary,
+                  color: isSelected
+                      ? AppTheme.deepNavy
+                      : (isLight ? const Color(0xFF64748B) : AppTheme.textSecondary),
                 ),
               ),
             ),
@@ -478,25 +558,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showHelpDialog() {
+    final isLight = Theme.of(context).brightness == Brightness.light;
+    final textColor = isLight ? const Color(0xFF0F172A) : Colors.white;
+
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: AppTheme.deepNavy,
+        backgroundColor: isLight ? Colors.white : AppTheme.deepNavy,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(22),
-          side: const BorderSide(color: AppTheme.electricCyan, width: 1.2),
+          side: BorderSide(
+            color: isLight ? const Color(0xFFCBD5E1) : AppTheme.electricCyan,
+            width: 1.2,
+          ),
         ),
-        title: const Text('NodeLink Architecture', style: TextStyle(color: Colors.white)),
-        content: const Text(
+        title: Text('NodeLink Architecture', style: TextStyle(color: textColor, fontWeight: FontWeight.bold)),
+        content: Text(
           'NodeLink utilizes motion sensor acceleration heuristics to detect STILL vs ACTIVE states. '
           'STILL updates location every 10 mins, saving 80% battery.\n\n'
           'Low battery throttling throttles polling to 20 minutes when battery is below 15%.',
-          style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, height: 1.4),
+          style: TextStyle(
+            color: isLight ? const Color(0xFF475569) : AppTheme.textSecondary,
+            fontSize: 13,
+            height: 1.4,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('GOT IT', style: TextStyle(color: AppTheme.electricCyan)),
+            child: const Text('GOT IT', style: TextStyle(color: AppTheme.electricCyan, fontWeight: FontWeight.bold)),
           ),
         ],
       ),

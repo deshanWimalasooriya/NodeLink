@@ -9,9 +9,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/node_user.dart';
 import '../models/tracking_settings.dart';
 import '../models/location_record.dart';
+import '../models/neighbor_group.dart';
 import '../services/adaptive_polling_service.dart';
 import '../services/firebase_sync_service.dart';
 import '../services/background_service.dart';
+
+enum AppMapTheme {
+  auto,        // Follows Light / Dark mode
+  darkMatter,  // CartoDB Dark Matter
+  cartoLight,  // CartoDB Positron / Light
+  satellite,   // ESRI World Imagery
+  street,      // OpenStreetMap Standard
+}
 
 class NodeLinkProvider extends ChangeNotifier {
   // Current Node
@@ -35,6 +44,13 @@ class NodeLinkProvider extends ChangeNotifier {
   bool _isInitialized = false;
   bool _hasAccount = false;
 
+  // App Theme & Map Theme Engine
+  ThemeMode _themeMode = ThemeMode.dark;
+  AppMapTheme _mapTheme = AppMapTheme.auto;
+
+  // Neighbor Groups
+  Map<String, NeighborGroup> _groups = {};
+
   // Getters
   NodeUser get currentUser => _currentUser;
   List<NodeUser> get connectedNodes => List.unmodifiable(_connectedNodes);
@@ -43,6 +59,10 @@ class NodeLinkProvider extends ChangeNotifier {
   AdaptivePollingService get adaptiveService => _adaptiveService;
   bool get isInitialized => _isInitialized;
   bool get hasAccount => _hasAccount;
+
+  ThemeMode get themeMode => _themeMode;
+  AppMapTheme get mapTheme => _mapTheme;
+  List<NeighborGroup> get groups => _groups.values.toList();
 
   NodeMotionState get motionState => _adaptiveService.currentMotionState;
   int get secondsUntilNextPoll => _adaptiveService.secondsUntilNextPoll;
@@ -146,6 +166,22 @@ class NodeLinkProvider extends ChangeNotifier {
       );
     }
 
+    // Load saved theme & map theme preferences
+    final savedTheme = prefs.getString('app_theme_mode');
+    if (savedTheme == 'light') {
+      _themeMode = ThemeMode.light;
+    } else {
+      _themeMode = ThemeMode.dark;
+    }
+
+    final savedMap = prefs.getString('app_map_theme');
+    if (savedMap != null) {
+      _mapTheme = AppMapTheme.values.firstWhere(
+        (e) => e.name == savedMap,
+        orElse: () => AppMapTheme.auto,
+      );
+    }
+
     // Load saved settings
     await _loadSavedSettings();
 
@@ -156,6 +192,7 @@ class NodeLinkProvider extends ChangeNotifier {
     if (_hasAccount) {
       await _initFirebase();
       _startFirebaseLiveSync();
+      await loadGroups();
     }
 
     // Start adaptive polling service
@@ -171,8 +208,67 @@ class NodeLinkProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// App Theme & Map Theme Engine
+  Future<void> setThemeMode(ThemeMode mode) async {
+    _themeMode = mode;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('app_theme_mode', mode == ThemeMode.light ? 'light' : 'dark');
+    } catch (e) {
+      debugPrint('Error saving theme mode: $e');
+    }
+  }
+
+  Future<void> toggleThemeMode() async {
+    final next = _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
+    await setThemeMode(next);
+  }
+
+  Future<void> setMapTheme(AppMapTheme theme) async {
+    _mapTheme = theme;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('app_map_theme', theme.name);
+    } catch (e) {
+      debugPrint('Error saving map theme: $e');
+    }
+  }
+
+  /// Neighbor Groups Management
+  Future<void> loadGroups() async {
+    if (_currentUser.id.isNotEmpty) {
+      final fetched = await FirebaseSyncService.fetchGroups(_currentUser.id);
+      _groups = fetched;
+      notifyListeners();
+    }
+  }
+
+  Future<void> createGroup(String name) async {
+    final groupId = 'grp_${DateTime.now().millisecondsSinceEpoch}';
+    final group = NeighborGroup(id: groupId, name: name, members: {});
+    _groups[groupId] = group;
+    notifyListeners();
+    await FirebaseSyncService.saveGroup(_currentUser.id, group);
+  }
+
+  Future<void> updateGroupMembers(String groupId, Map<String, bool> members) async {
+    if (_groups.containsKey(groupId)) {
+      _groups[groupId] = _groups[groupId]!.copyWith(members: members);
+      notifyListeners();
+      await FirebaseSyncService.updateGroupMembers(_currentUser.id, groupId, members);
+    }
+  }
+
+  Future<void> deleteGroup(String groupId) async {
+    _groups.remove(groupId);
+    notifyListeners();
+    await FirebaseSyncService.deleteGroup(_currentUser.id, groupId);
+  }
+
   /// Initialize newly created account from RegistrationSetupScreen / CreateAccountScreen
-  /// Stores user on Firebase and ensures actual data is fetched back
+  /// Stores 16-character secure Node ID on Firebase and ensures actual data is fetched back
   Future<void> initializeNewAccount({
     required String name,
     required String nodeId,
@@ -182,10 +278,10 @@ class NodeLinkProvider extends ChangeNotifier {
   }) async {
     _hasAccount = true;
 
-    final cleanDigits = nodeId.replaceAll(RegExp(r'[^0-9]'), '');
-    final persistent6DigitId = cleanDigits.length >= 6
-        ? cleanDigits.substring(0, 6)
-        : (cleanDigits.isNotEmpty ? cleanDigits : nodeId);
+    final cleanChars = nodeId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+    final secureNodeId = cleanChars.isNotEmpty
+        ? cleanChars
+        : FirebaseSyncService.generateSecureNodeId();
 
     // 1. Fetch real physical GPS position
     final realPos = await fetchRealGpsPosition();
@@ -199,7 +295,7 @@ class NodeLinkProvider extends ChangeNotifier {
     } catch (_) {}
 
     _currentUser = NodeUser(
-      id: persistent6DigitId,
+      id: secureNodeId,
       name: name,
       email: '$name@nodelink.com',
       phone: phoneNumber,
@@ -222,9 +318,9 @@ class NodeLinkProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('username', name);
     await prefs.setString('phoneNumber', phoneNumber);
-    await prefs.setString('nodeId', persistent6DigitId);
+    await prefs.setString('nodeId', secureNodeId);
     await prefs.setString('nodelink_user_profile', name);
-    await prefs.setString('nodelink_node_id', persistent6DigitId);
+    await prefs.setString('nodelink_node_id', secureNodeId);
     if (profilePicUrl != null && profilePicUrl.isNotEmpty) {
       await prefs.setString('profilePicUrl', profilePicUrl);
       await prefs.setString('nodelink_profile_pic_url', profilePicUrl);
@@ -235,7 +331,7 @@ class NodeLinkProvider extends ChangeNotifier {
 
     // 3. STORE NEW ACCOUNT TO FIREBASE REALTIME DATABASE at /users/<nodeId>
     await FirebaseSyncService.instantiateUserRecord(
-      nodeId: persistent6DigitId,
+      nodeId: secureNodeId,
       name: name,
       phoneNumber: phoneNumber,
       profilePicUrl: profilePicUrl ?? '',
@@ -246,7 +342,7 @@ class NodeLinkProvider extends ChangeNotifier {
     await FirebaseSyncService.syncNodeLocation(node: _currentUser);
 
     // 4. Verify by re-fetching actual data from Firebase backend
-    final backendUser = await FirebaseSyncService.fetchNode(persistent6DigitId);
+    final backendUser = await FirebaseSyncService.fetchNode(secureNodeId);
     if (backendUser != null) {
       _currentUser = backendUser.copyWith(
         isSelf: true,
@@ -256,9 +352,8 @@ class NodeLinkProvider extends ChangeNotifier {
       );
     }
 
-    // Start live cloud synchronization
+    await loadGroups();
     _startFirebaseLiveSync();
-
     notifyListeners();
   }
 

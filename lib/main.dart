@@ -44,10 +44,14 @@ class NodeLinkApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final provider = context.watch<NodeLinkProvider>();
+
     return MaterialApp(
       title: 'NodeLink',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: provider.themeMode,
       home: hasAccount ? const HomeScreen() : const OnboardingWelcomeScreen(),
     );
   }

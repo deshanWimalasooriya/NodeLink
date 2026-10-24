@@ -25,6 +25,8 @@ class CyberAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isLight = Theme.of(context).brightness == Brightness.light;
+
     return Container(
       padding: EdgeInsets.only(
         top: MediaQuery.of(context).padding.top + 8,
@@ -48,22 +50,50 @@ class CyberAppBar extends StatelessWidget implements PreferredSizeWidget {
 
           // Title
           titleWidget ??
-              ShaderMask(
-                shaderCallback: (bounds) => const LinearGradient(
-                  colors: [Colors.white, AppTheme.electricCyan],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ).createShader(bounds),
-                child: Text(
-                  titleText ?? 'NodeLink',
-                  style: const TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                    letterSpacing: 0.5,
-                  ),
-                ),
-              ),
+              (isLight
+                  ? RichText(
+                      text: TextSpan(
+                        children: [
+                          TextSpan(
+                            text: titleText == 'NodeLink' ? 'Node' : (titleText ?? 'NodeLink'),
+                            style: const TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.w900,
+                              color: AppTheme.lightTextPrimary,
+                              letterSpacing: 0.5,
+                              fontFamily: 'Roboto',
+                            ),
+                          ),
+                          if (titleText == 'NodeLink')
+                            const TextSpan(
+                              text: 'Link',
+                              style: TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.w900,
+                                color: AppTheme.electricCyan,
+                                letterSpacing: 0.5,
+                                fontFamily: 'Roboto',
+                              ),
+                            ),
+                        ],
+                      ),
+                    )
+                  : ShaderMask(
+                      shaderCallback: (bounds) => const LinearGradient(
+                        colors: [Colors.white, AppTheme.electricCyan],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ).createShader(bounds),
+                      child: Text(
+                        titleText ?? 'NodeLink',
+                        style: const TextStyle(
+                          fontSize: 26,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    )),
 
           // Actions
           Row(
@@ -96,6 +126,17 @@ class CyberCircleIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isLight = Theme.of(context).brightness == Brightness.light;
+    final defaultBg = isLight
+        ? Colors.white.withValues(alpha: 0.9)
+        : AppTheme.spaceIndigo.withValues(alpha: 0.5);
+    final defaultBorder = borderColor ??
+        (isLight
+            ? const Color(0xFFCBD5E1)
+            : AppTheme.electricCyan.withValues(alpha: 0.25));
+    final defaultIconColor = iconColor ??
+        (isLight ? AppTheme.lightTextPrimary : AppTheme.textSecondary);
+
     return GestureDetector(
       onTap: onTap,
       child: ClipRRect(
@@ -107,14 +148,16 @@ class CyberCircleIconButton extends StatelessWidget {
             height: size,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: AppTheme.spaceIndigo.withValues(alpha: 0.5),
+              color: defaultBg,
               border: Border.all(
-                color: borderColor ?? AppTheme.electricCyan.withValues(alpha: 0.25),
+                color: defaultBorder,
                 width: 1.0,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.2),
+                  color: isLight
+                      ? const Color(0xFF0F172A).withValues(alpha: 0.08)
+                      : Colors.black.withValues(alpha: 0.2),
                   blurRadius: 8,
                 ),
               ],
@@ -123,7 +166,7 @@ class CyberCircleIconButton extends StatelessWidget {
               child: Icon(
                 icon,
                 size: iconSize,
-                color: iconColor ?? AppTheme.textSecondary,
+                color: defaultIconColor,
               ),
             ),
           ),

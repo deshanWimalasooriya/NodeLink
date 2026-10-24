@@ -21,6 +21,16 @@ class AppTheme {
   static const Color textSecondary = Color(0xFF8E9DB8);
   static const Color textMuted = Color(0xFF5F6E8A);
 
+  // Light Mode Palette (Faithfully aligned with mockups in Interfaces/UI/light mode/)
+  static const Color lightBg = Color(0xFFF8FAFC);
+  static const Color lightSurface = Color(0xFFFFFFFF);
+  static const Color lightBorder = Color(0xFFE2E8F0);
+  static const Color lightCardBg = Color(0xF5FFFFFF);
+  static const Color lightCardBorder = Color(0xFFE2E8F0);
+  static const Color lightTextPrimary = Color(0xFF0F172A);
+  static const Color lightTextSecondary = Color(0xFF64748B);
+  static const Color lightTextMuted = Color(0xFF94A3B8);
+
   // Cyber Box Shadows & Glows
   static List<BoxShadow> cyanGlow({double blur = 16, double spread = 0, double opacity = 0.4}) => [
     BoxShadow(
@@ -46,7 +56,15 @@ class AppTheme {
     ),
   ];
 
-  // Theme Data Configuration
+  static List<BoxShadow> lightCardShadow = [
+    BoxShadow(
+      color: const Color(0xFF0F172A).withValues(alpha: 0.08),
+      blurRadius: 18,
+      offset: const Offset(0, 6),
+    ),
+  ];
+
+  // Theme Data Configuration - Dark Theme
   static ThemeData get darkTheme {
     return ThemeData(
       brightness: Brightness.dark,
@@ -54,7 +72,7 @@ class AppTheme {
       primaryColor: electricCyan,
       canvasColor: deepNavy,
       cardColor: spaceIndigo,
-      fontFamily: 'Roboto', // Fallback or standard clean sans font
+      fontFamily: 'Roboto',
       colorScheme: const ColorScheme.dark(
         primary: electricCyan,
         secondary: neonGreen,
@@ -104,6 +122,69 @@ class AppTheme {
             return neonGreen.withValues(alpha: 0.35);
           }
           return spaceIndigo;
+        }),
+      ),
+    );
+  }
+
+  // Theme Data Configuration - Light Theme
+  static ThemeData get lightTheme {
+    return ThemeData(
+      brightness: Brightness.light,
+      scaffoldBackgroundColor: lightBg,
+      primaryColor: electricCyan,
+      canvasColor: lightBg,
+      cardColor: lightSurface,
+      fontFamily: 'Roboto',
+      colorScheme: const ColorScheme.light(
+        primary: electricCyan,
+        secondary: cyberTeal,
+        surface: lightSurface,
+        error: warningRed,
+        onPrimary: deepNavy,
+        onSecondary: deepNavy,
+        onSurface: lightTextPrimary,
+      ),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
+        titleTextStyle: TextStyle(
+          fontSize: 22,
+          fontWeight: FontWeight.w700,
+          color: lightTextPrimary,
+          letterSpacing: 0.5,
+        ),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: electricCyan,
+          foregroundColor: deepNavy,
+          elevation: 4,
+          shadowColor: electricCyan.withValues(alpha: 0.4),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(26),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.0,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        ),
+      ),
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return Colors.white;
+          }
+          return lightTextMuted;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return electricCyan;
+          }
+          return lightBorder;
         }),
       ),
     );

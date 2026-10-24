@@ -19,7 +19,7 @@
     <a href="#-getting-started">Getting Started</a>
   </p>
 
-  <img src="assets/images/hero_banner.png" alt="NodeLink Hero Banner" width="100%" />
+  <img src="assets/images/hero_banner.jpg" alt="NodeLink Hero Banner" width="100%" />
 </div>
 
 ---
@@ -45,9 +45,9 @@ Instead of draining battery with constant high-frequency GPS locks, NodeLink use
       <td align="center"><b>Telemetry Settings</b></td>
     </tr>
     <tr>
-      <td><img src="assets/images/home_dashboard.png" width="200" alt="Home Dashboard"/></td>
+      <td><img src="assets/images/Home.jpg" width="200" alt="Home Dashboard"/></td>
       <td><img src="assets/images/connection_hub.png" width="200" alt="Connection Hub"/></td>
-      <td><img src="assets/images/user_profile.png" width="200" alt="User Profile"/></td>
+      <td><img src="assets/images/rofile.jpg" width="200" alt="User Profile"/></td>
       <td><img src="assets/images/settings.png" width="200" alt="Settings"/></td>
     </tr>
   </table>

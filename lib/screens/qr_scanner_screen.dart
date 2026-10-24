@@ -53,22 +53,25 @@ class _QrScannerScreenState extends State<QrScannerScreen>
       final rawValue = barcode.rawValue;
       if (rawValue == null || rawValue.isEmpty) continue;
 
-      // Extract 6 digits (format: 842-915, 842 - 915, 842915, nodelink:842-915, etc.) or Node key
-      final digitsMatch = RegExp(r'\d{3}\s*-?\s*\d{3}|\d{6}').firstMatch(rawValue);
+      // Extract 16-character alphanumeric cryptographic string (or legacy 6-digit Node ID)
       String targetNodeId = '';
+      final clean = rawValue.replaceFirst('nodelink:', '').trim();
+      final hex16Match = RegExp(r'[a-zA-Z0-9]{16}').firstMatch(clean);
 
-      if (digitsMatch != null) {
-        final digits = digitsMatch.group(0)!.replaceAll(RegExp(r'\D'), '');
-        if (digits.length == 6) {
-          targetNodeId = digits;
+      if (hex16Match != null) {
+        targetNodeId = hex16Match.group(0)!;
+      } else {
+        final digitsMatch = RegExp(r'\d{3}\s*-?\s*\d{3}|\d{6}').firstMatch(rawValue);
+        if (digitsMatch != null) {
+          final digits = digitsMatch.group(0)!.replaceAll(RegExp(r'\D'), '');
+          if (digits.length == 6) {
+            targetNodeId = digits;
+          }
         }
       }
 
-      if (targetNodeId.isEmpty) {
-        final clean = rawValue.replaceFirst('nodelink:', '').trim();
-        if (clean.isNotEmpty) {
-          targetNodeId = clean;
-        }
+      if (targetNodeId.isEmpty && clean.isNotEmpty) {
+        targetNodeId = clean;
       }
 
       if (targetNodeId.isNotEmpty) {
@@ -90,9 +93,11 @@ class _QrScannerScreenState extends State<QrScannerScreen>
         if (!mounted) return;
 
         // 3. Display success SnackBar
-        final displayId = targetNodeId.length == 6
-            ? '${targetNodeId.substring(0, 3)} - ${targetNodeId.substring(3, 6)}'
-            : targetNodeId;
+        final displayId = targetNodeId.length >= 16
+            ? '${targetNodeId.substring(0, 8)}...${targetNodeId.substring(targetNodeId.length - 4)}'
+            : (targetNodeId.length == 6
+                ? '${targetNodeId.substring(0, 3)} - ${targetNodeId.substring(3, 6)}'
+                : targetNodeId);
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

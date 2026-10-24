@@ -32,8 +32,34 @@ class CyberCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveBorderColor = borderColor ?? AppTheme.electricCyan.withValues(alpha: 0.18);
-    final effectiveBgColor = backgroundColor ?? AppTheme.spaceIndigo.withValues(alpha: 0.45);
+    final isLight = Theme.of(context).brightness == Brightness.light;
+    final effectiveBorderColor = borderColor ??
+        (isLight
+            ? AppTheme.lightCardBorder
+            : AppTheme.electricCyan.withValues(alpha: 0.18));
+    final effectiveBgColor = backgroundColor ??
+        (isLight
+            ? AppTheme.lightCardBg
+            : AppTheme.spaceIndigo.withValues(alpha: 0.45));
+    final effectiveShadows = shadows ?? (isLight ? AppTheme.lightCardShadow : AppTheme.cardShadow);
+
+    final defaultGradient = isLight
+        ? LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.white.withValues(alpha: 0.95),
+              Colors.white.withValues(alpha: 0.85),
+            ],
+          )
+        : LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.white.withValues(alpha: 0.08),
+              Colors.white.withValues(alpha: 0.02),
+            ],
+          );
 
     Widget content = ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
@@ -48,16 +74,8 @@ class CyberCard extends StatelessWidget {
               color: effectiveBorderColor,
               width: borderWidth,
             ),
-            gradient: gradient ??
-                LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    Colors.white.withValues(alpha: 0.08),
-                    Colors.white.withValues(alpha: 0.02),
-                  ],
-                ),
-            boxShadow: shadows ?? AppTheme.cardShadow,
+            gradient: gradient ?? defaultGradient,
+            boxShadow: effectiveShadows,
           ),
           child: child,
         ),

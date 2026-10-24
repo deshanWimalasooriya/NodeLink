@@ -1,10 +1,10 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/theme/app_theme.dart';
 import '../core/widgets/cyber_card.dart';
 import '../providers/node_link_provider.dart';
+import '../services/firebase_sync_service.dart';
 import 'home_screen.dart';
 
 class CreateAccountScreen extends StatefulWidget {
@@ -26,10 +26,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
   }
 
   String _generateRandomNodeId() {
-    final random = Random();
-    final part1 = 100 + random.nextInt(900);
-    final part2 = 100 + random.nextInt(900);
-    return '$part1$part2';
+    return FirebaseSyncService.generateSecureNodeId();
   }
 
   void _regenerateId() {

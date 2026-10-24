@@ -13,6 +13,12 @@ class CyberToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isLight = Theme.of(context).brightness == Brightness.light;
+    final activeBg = isLight ? AppTheme.electricCyan : AppTheme.neonGreen.withValues(alpha: 0.85);
+    final inactiveBg = isLight ? const Color(0xFFE2E8F0) : AppTheme.spaceIndigo.withValues(alpha: 0.6);
+    final activeBorder = isLight ? AppTheme.electricCyan : AppTheme.neonGreen;
+    final inactiveBorder = isLight ? const Color(0xFFCBD5E1) : AppTheme.electricCyan.withValues(alpha: 0.2);
+
     return GestureDetector(
       onTap: () => onChanged(!value),
       child: AnimatedContainer(
@@ -23,19 +29,15 @@ class CyberToggle extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          color: value
-              ? AppTheme.neonGreen.withValues(alpha: 0.85)
-              : AppTheme.spaceIndigo.withValues(alpha: 0.6),
+          color: value ? activeBg : inactiveBg,
           border: Border.all(
-            color: value
-                ? AppTheme.neonGreen
-                : AppTheme.electricCyan.withValues(alpha: 0.2),
+            color: value ? activeBorder : inactiveBorder,
             width: 1.2,
           ),
           boxShadow: value
               ? [
                   BoxShadow(
-                    color: AppTheme.neonGreen.withValues(alpha: 0.45),
+                    color: (isLight ? AppTheme.electricCyan : AppTheme.neonGreen).withValues(alpha: 0.45),
                     blurRadius: 10,
                     spreadRadius: 1,
                   ),
@@ -57,7 +59,7 @@ class CyberToggle extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w900,
-                    color: value ? AppTheme.deepNavy : AppTheme.textMuted,
+                    color: value ? AppTheme.deepNavy : (isLight ? AppTheme.lightTextMuted : AppTheme.textMuted),
                     letterSpacing: 0.5,
                   ),
                 ),
@@ -73,10 +75,10 @@ class CyberToggle extends StatelessWidget {
                 height: 24,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: value ? Colors.white : AppTheme.textMuted,
+                  color: value ? Colors.white : (isLight ? const Color(0xFF94A3B8) : AppTheme.textMuted),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.3),
+                      color: Colors.black.withValues(alpha: 0.2),
                       blurRadius: 4,
                       offset: const Offset(0, 2),
                     ),

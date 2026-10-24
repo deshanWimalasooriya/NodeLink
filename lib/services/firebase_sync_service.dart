@@ -1,15 +1,28 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:uuid/uuid.dart';
 import '../models/node_user.dart';
+import '../models/neighbor_group.dart';
 
 class FirebaseSyncService {
   // Configurable Firebase Realtime Database URL (Spark Free Tier)
   static String? firebaseDatabaseUrl =
       'https://nodelink-5232f-default-rtdb.asia-southeast1.firebasedatabase.app';
 
-  /// Converts any string ID (like '842 - 915') into a valid Firebase Realtime Database path key
+  /// Generates a cryptographically secure 16-character alphanumeric Node ID
+  static String generateSecureNodeId() {
+    return const Uuid().v4().replaceAll('-', '').substring(0, 16);
+  }
+
+  /// Normalizes usernames for the /usernames fast-lookup index in Firebase RTDB
+  static String sanitizeUsername(String username) {
+    return username.trim().toLowerCase().replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '_');
+  }
+
+  /// Converts any string ID into a valid Firebase Realtime Database path key
   static String sanitizeKey(String id) {
     final clean = id
         .replaceAll(RegExp(r'[^a-zA-Z0-9_]+'), '_')
@@ -66,8 +79,77 @@ class FirebaseSyncService {
     return true;
   }
 
+  /// Check if a username is already taken in the /usernames index
+  static Future<bool> isUsernameTaken(String username) async {
+    final cleanUsername = sanitizeUsername(username);
+    if (cleanUsername.isEmpty) return false;
+
+    if (firebaseDatabaseUrl != null && firebaseDatabaseUrl!.isNotEmpty) {
+      try {
+        final cleanUrl = cleanDatabaseUrl(firebaseDatabaseUrl!);
+        final response = await http
+            .get(Uri.parse('$cleanUrl/usernames/$cleanUsername.json'))
+            .timeout(const Duration(seconds: 4));
+
+        if (response.statusCode == 200 && response.body != 'null' && response.body != 'false') {
+          return true;
+        }
+      } catch (e) {
+        debugPrint('Error checking username availability: $e');
+      }
+    }
+    return false;
+  }
+
+  /// Generate up to 3 available alternative username suggestions verified against the DB
+  static Future<List<String>> generateAvailableSuggestions(String baseUsername) async {
+    final clean = baseUsername.trim().toLowerCase().replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+    final candidates = <String>[
+      '${clean}123',
+      '${clean}99',
+      '${clean}_${Random().nextInt(899) + 100}',
+      '${clean}01',
+      '${clean}77',
+      '${clean}xyz',
+    ];
+
+    final available = <String>[];
+    for (final candidate in candidates) {
+      if (available.length >= 3) break;
+      final taken = await isUsernameTaken(candidate);
+      if (!taken && !available.contains(candidate)) {
+        available.add(candidate);
+      }
+    }
+    return available;
+  }
+
+  /// Write username to the fast-lookup index: `/usernames/<username>: true`
+  static Future<bool> registerUsername(String username, String nodeId) async {
+    final cleanUsername = sanitizeUsername(username);
+    if (cleanUsername.isEmpty) return false;
+
+    if (firebaseDatabaseUrl != null && firebaseDatabaseUrl!.isNotEmpty) {
+      try {
+        final cleanUrl = cleanDatabaseUrl(firebaseDatabaseUrl!);
+        final uri = Uri.parse('$cleanUrl/usernames/$cleanUsername.json');
+        final response = await http.put(
+          uri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(true),
+        ).timeout(const Duration(seconds: 5));
+        return response.statusCode == 200;
+      } catch (e) {
+        debugPrint('Error registering username in index: $e');
+      }
+    }
+    return false;
+  }
+
   /// Instantiate newly registered user record inside Firebase Realtime Database
-  /// Exactly matches: `/users/<nodeId>` { name, phoneNumber, nodeId, status: 'online', is_moving: false, profilePicUrl: '' }
+  /// Writes simultaneously to:
+  /// - `/users/<nodeId>`
+  /// - `/usernames/<username>`
   static Future<bool> instantiateUserRecord({
     required String nodeId,
     required String name,
@@ -77,18 +159,16 @@ class FirebaseSyncService {
     double longitude = 79.8612,
     int batteryLevel = 85,
   }) async {
-    final cleanDigits = nodeId.replaceAll(RegExp(r'[^0-9]'), '');
-    final persistent6DigitId = cleanDigits.length >= 6
-        ? cleanDigits.substring(0, 6)
-        : (cleanDigits.isNotEmpty ? cleanDigits : nodeId);
+    final cleanDigits = nodeId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+    final secureNodeId = cleanDigits.isNotEmpty ? cleanDigits : nodeId;
 
     final Map<String, dynamic> record = {
       'name': name,
       'username': name,
       'phoneNumber': phoneNumber,
       'phone': phoneNumber,
-      'nodeId': persistent6DigitId,
-      'id': nodeId,
+      'nodeId': secureNodeId,
+      'id': secureNodeId,
       'status': 'online',
       'is_moving': false,
       'profilePicUrl': profilePicUrl,
@@ -105,7 +185,7 @@ class FirebaseSyncService {
     if (firebaseDatabaseUrl != null && firebaseDatabaseUrl!.isNotEmpty) {
       try {
         final cleanUrl = cleanDatabaseUrl(firebaseDatabaseUrl!);
-        final key = sanitizeKey(nodeId);
+        final key = sanitizeKey(secureNodeId);
 
         final futures = <Future<http.Response>>[];
 
@@ -116,21 +196,156 @@ class FirebaseSyncService {
           body: jsonEncode(record),
         ));
 
-        // 2. Also put directly to persistent 6-digit numeric key: /users/<persistent6DigitId>.json
-        if (persistent6DigitId.isNotEmpty && persistent6DigitId != key) {
+        // 2. Also put directly to raw secureNodeId: /users/<secureNodeId>.json
+        if (secureNodeId != key) {
           futures.add(http.put(
-            Uri.parse('$cleanUrl/users/$persistent6DigitId.json'),
+            Uri.parse('$cleanUrl/users/$secureNodeId.json'),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode(record),
           ));
         }
 
+        // 3. Fast-lookup username index: /usernames/<username>: true
+        final cleanUsername = sanitizeUsername(name);
+        if (cleanUsername.isNotEmpty) {
+          futures.add(http.put(
+            Uri.parse('$cleanUrl/usernames/$cleanUsername.json'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(true),
+          ));
+        }
+
         await Future.wait(futures).timeout(const Duration(seconds: 6));
-        debugPrint('Firebase instantiated user record successfully for nodeId: $nodeId ($persistent6DigitId)');
+        debugPrint('Firebase instantiated user record & username index for nodeId: $secureNodeId ($name)');
         return true;
       } catch (e) {
         debugPrint('Error instantiating user record in Firebase: $e');
       }
+    }
+    return false;
+  }
+
+  /// Save or update a neighbor group for the current node
+  /// Path: `users/<user_id>/groups/<group_id>`
+  static Future<bool> saveGroup(String userNodeId, NeighborGroup group) async {
+    if (firebaseDatabaseUrl == null || firebaseDatabaseUrl!.isEmpty) return false;
+    try {
+      final cleanUrl = cleanDatabaseUrl(firebaseDatabaseUrl!);
+      final key = sanitizeKey(userNodeId);
+      final rawKey = userNodeId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+
+      final futures = <Future<http.Response>>[];
+      futures.add(http.put(
+        Uri.parse('$cleanUrl/users/$key/groups/${group.id}.json'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(group.toJson()),
+      ));
+
+      if (rawKey.isNotEmpty && rawKey != key) {
+        futures.add(http.put(
+          Uri.parse('$cleanUrl/users/$rawKey/groups/${group.id}.json'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(group.toJson()),
+        ));
+      }
+
+      await Future.wait(futures).timeout(const Duration(seconds: 5));
+      return true;
+    } catch (e) {
+      debugPrint('Error saving group in Firebase: $e');
+    }
+    return false;
+  }
+
+  /// Fetch all groups for a user from `users/<user_id>/groups.json`
+  static Future<Map<String, NeighborGroup>> fetchGroups(String userNodeId) async {
+    final Map<String, NeighborGroup> groups = {};
+    if (firebaseDatabaseUrl == null || firebaseDatabaseUrl!.isEmpty) return groups;
+
+    try {
+      final cleanUrl = cleanDatabaseUrl(firebaseDatabaseUrl!);
+      final key = sanitizeKey(userNodeId);
+      final rawKey = userNodeId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+
+      http.Response response = await http
+          .get(Uri.parse('$cleanUrl/users/$key/groups.json'))
+          .timeout(const Duration(seconds: 5));
+
+      if ((response.statusCode != 200 || response.body == 'null') && rawKey.isNotEmpty && rawKey != key) {
+        response = await http
+            .get(Uri.parse('$cleanUrl/users/$rawKey/groups.json'))
+            .timeout(const Duration(seconds: 5));
+      }
+
+      if (response.statusCode == 200 && response.body != 'null') {
+        final data = jsonDecode(response.body);
+        if (data is Map<String, dynamic>) {
+          data.forEach((groupId, groupData) {
+            if (groupData is Map) {
+              groups[groupId] = NeighborGroup.fromJson(groupId, groupData);
+            }
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching groups from Firebase: $e');
+    }
+    return groups;
+  }
+
+  /// Delete a group from `users/<user_id>/groups/<group_id>.json`
+  static Future<bool> deleteGroup(String userNodeId, String groupId) async {
+    if (firebaseDatabaseUrl == null || firebaseDatabaseUrl!.isEmpty) return false;
+    try {
+      final cleanUrl = cleanDatabaseUrl(firebaseDatabaseUrl!);
+      final key = sanitizeKey(userNodeId);
+      final rawKey = userNodeId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+
+      final futures = <Future<http.Response>>[];
+      futures.add(http.delete(Uri.parse('$cleanUrl/users/$key/groups/$groupId.json')));
+      if (rawKey.isNotEmpty && rawKey != key) {
+        futures.add(http.delete(Uri.parse('$cleanUrl/users/$rawKey/groups/$groupId.json')));
+      }
+
+      await Future.wait(futures).timeout(const Duration(seconds: 5));
+      return true;
+    } catch (e) {
+      debugPrint('Error deleting group: $e');
+    }
+    return false;
+  }
+
+  /// Update members map in a group: `users/<user_id>/groups/<group_id>/members.json`
+  static Future<bool> updateGroupMembers(
+    String userNodeId,
+    String groupId,
+    Map<String, bool> members,
+  ) async {
+    if (firebaseDatabaseUrl == null || firebaseDatabaseUrl!.isEmpty) return false;
+    try {
+      final cleanUrl = cleanDatabaseUrl(firebaseDatabaseUrl!);
+      final key = sanitizeKey(userNodeId);
+      final rawKey = userNodeId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+
+      final futures = <Future<http.Response>>[];
+      futures.add(http.put(
+        Uri.parse('$cleanUrl/users/$key/groups/$groupId/members.json'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(members),
+      ));
+
+      if (rawKey.isNotEmpty && rawKey != key) {
+        futures.add(http.put(
+          Uri.parse('$cleanUrl/users/$rawKey/groups/$groupId/members.json'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(members),
+        ));
+      }
+
+      await Future.wait(futures).timeout(const Duration(seconds: 5));
+      return true;
+    } catch (e) {
+      debugPrint('Error updating group members: $e');
     }
     return false;
   }

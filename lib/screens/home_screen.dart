@@ -9,7 +9,9 @@ import 'package:latlong2/latlong.dart' as osm;
 import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/widgets/cyber_app_bar.dart';
+import '../core/widgets/map_theme_dialog.dart';
 import '../models/node_user.dart';
+import '../models/neighbor_group.dart';
 import '../providers/node_link_provider.dart';
 import '../services/adaptive_polling_service.dart';
 import '../services/firebase_sync_service.dart';
@@ -39,6 +41,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // State variables
   NodeUser? _selectedNode;
+  String? _selectedGroupId; // Null represents 'All'
   bool _isPermissionDenied = false;
   bool _isLoadingLocation = false;
 
@@ -160,71 +163,89 @@ class _HomeScreenState extends State<HomeScreen> {
       return CachedNetworkImage(
         imageUrl: user.profilePicUrl!,
         fit: BoxFit.cover,
-        placeholder: (context, url) => Center(
-          child: SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: color,
+        width: iconSize * 2,
+        height: iconSize * 2,
+        placeholder: (context, url) => Container(
+          color: AppTheme.spaceIndigo,
+          child: const Center(
+            child: SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00F0FF)),
             ),
           ),
         ),
-        errorWidget: (context, url, error) => Image.asset(
-          user.avatarPath,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => Icon(
-            Icons.person_rounded,
-            color: color,
-            size: iconSize,
-          ),
-        ),
+        errorWidget: (context, url, error) => _buildAssetOrFallback(user, iconSize, color),
       );
-    } else if (hasBase64Pic) {
+    }
+
+    if (hasBase64Pic) {
       try {
-        final rawBase64 = user.profilePicUrl!.split(',').last;
-        final bytes = base64Decode(rawBase64);
-        return Image.memory(bytes, fit: BoxFit.cover);
-      } catch (_) {
-        return Image.asset(
-          user.avatarPath,
+        final base64String = user.profilePicUrl!.split(',').last;
+        final bytes = base64Decode(base64String);
+        return Image.memory(
+          bytes,
           fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => Icon(
-            Icons.person_rounded,
-            color: color,
-            size: iconSize,
-          ),
+          width: iconSize * 2,
+          height: iconSize * 2,
+          errorBuilder: (context, error, stackTrace) => _buildAssetOrFallback(user, iconSize, color),
         );
+      } catch (_) {
+        return _buildAssetOrFallback(user, iconSize, color);
       }
-    } else if (user.avatarPath.isNotEmpty && !user.avatarPath.startsWith('http')) {
+    }
+
+    return _buildAssetOrFallback(user, iconSize, color);
+  }
+
+  Widget _buildAssetOrFallback(NodeUser user, double iconSize, Color color) {
+    if (user.avatarPath.isNotEmpty &&
+        (user.avatarPath.endsWith('.jpg') ||
+            user.avatarPath.endsWith('.jpeg') ||
+            user.avatarPath.endsWith('.png'))) {
       return Image.asset(
         user.avatarPath,
         fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => Icon(
-          Icons.person_rounded,
-          color: color,
-          size: iconSize,
-        ),
-      );
-    } else {
-      return Icon(
-        Icons.person_rounded,
-        color: color,
-        size: iconSize,
+        errorBuilder: (context, error, stackTrace) => _buildInitialsFallback(user, color, iconSize),
       );
     }
+    return _buildInitialsFallback(user, color, iconSize);
   }
 
-  /// Marker Widget Design:
-  /// Wrap cached_network_image profile pictures in a circular Container with glowing neon green or electric-cyan border.
-  /// If no image exists, use a default fallback icon.
-  Widget _buildUserAvatarMarker(NodeUser user, {bool isSelf = false, bool isSelected = false}) {
-    final isOnline = user.status.toLowerCase() == 'online';
+  Widget _buildInitialsFallback(NodeUser user, Color color, double iconSize) {
+    final initials = user.name.isNotEmpty
+        ? user.name.trim().split(' ').map((e) => e.isNotEmpty ? e[0] : '').take(2).join().toUpperCase()
+        : 'NL';
+
+    return Container(
+      color: AppTheme.spaceIndigo,
+      alignment: Alignment.center,
+      child: Text(
+        initials,
+        style: TextStyle(
+          color: color,
+          fontSize: iconSize * 0.75,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+
+  /// Custom Circular Avatar Marker with glowing border and dynamic name label
+  Widget _buildUserAvatarMarker(
+    NodeUser user, {
+    required bool isSelf,
+    bool isSelected = false,
+    bool isLight = false,
+  }) {
     final borderColor = isSelf
         ? const Color(0xFF00F0FF)
         : (isSelected
-            ? const Color(0xFF00F0FF)
-            : (isOnline ? AppTheme.neonGreen : const Color(0xFF00F0FF)));
+            ? AppTheme.neonGreen
+            : (user.status.toLowerCase() == 'online'
+                ? AppTheme.neonGreen
+                : const Color(0xFF00F0FF)));
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -233,27 +254,31 @@ class _HomeScreenState extends State<HomeScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           decoration: BoxDecoration(
-            color: AppTheme.deepNavy.withValues(alpha: 0.92),
+            color: isLight
+                ? (isSelf ? const Color(0xFF38BDF8) : Colors.white.withValues(alpha: 0.95))
+                : AppTheme.deepNavy.withValues(alpha: 0.92),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: borderColor,
+              color: isLight && !isSelf ? const Color(0xFFCBD5E1) : borderColor,
               width: isSelected ? 1.8 : 1.0,
             ),
             boxShadow: [
               BoxShadow(
                 color: isSelected
                     ? const Color(0xFF00F0FF).withValues(alpha: 0.6)
-                    : Colors.black.withValues(alpha: 0.4),
+                    : Colors.black.withValues(alpha: isLight ? 0.15 : 0.4),
                 blurRadius: isSelected ? 8 : 4,
               ),
             ],
           ),
           child: Text(
-            isSelf ? 'YOU' : user.name.split(' ').first,
+            isSelf ? 'You' : user.name.split(' ').first,
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w800,
-              color: isSelf || isSelected ? const Color(0xFF00F0FF) : Colors.white,
+              color: isLight
+                  ? (isSelf ? Colors.white : const Color(0xFF0F172A))
+                  : (isSelf || isSelected ? const Color(0xFF00F0FF) : Colors.white),
               letterSpacing: 0.4,
             ),
             maxLines: 1,
@@ -268,7 +293,7 @@ class _HomeScreenState extends State<HomeScreen> {
           height: 48,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: AppTheme.deepNavy,
+            color: isLight ? Colors.white : AppTheme.deepNavy,
             border: Border.all(
               color: borderColor,
               width: isSelected ? 3.0 : 2.5,
@@ -290,7 +315,11 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// Build OSM Markers from incoming live consolidated neighbor stream
-  List<osm_map.Marker> _buildMarkers(NodeUser currentUser, List<NodeUser> connectedNodes) {
+  List<osm_map.Marker> _buildMarkers(
+    NodeUser currentUser,
+    List<NodeUser> connectedNodes, {
+    bool isLight = false,
+  }) {
     final List<osm_map.Marker> markers = [];
 
     // 1. Local User Node Marker
@@ -300,7 +329,7 @@ class _HomeScreenState extends State<HomeScreen> {
         width: 60,
         height: 74,
         alignment: Alignment.topCenter,
-        child: _buildUserAvatarMarker(currentUser, isSelf: true),
+        child: _buildUserAvatarMarker(currentUser, isSelf: true, isLight: isLight),
       ),
     );
 
@@ -318,7 +347,12 @@ class _HomeScreenState extends State<HomeScreen> {
               setState(() => _selectedNode = node);
               _mapController.move(osm.LatLng(node.latitude, node.longitude), 16.0);
             },
-            child: _buildUserAvatarMarker(node, isSelf: false, isSelected: isSelected),
+            child: _buildUserAvatarMarker(
+              node,
+              isSelf: false,
+              isSelected: isSelected,
+              isLight: isLight,
+            ),
           ),
         ),
       );
@@ -329,7 +363,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Mesh connection lines connecting active neighbors
   List<osm_map.Polyline> _buildPolylines(
-      NodeUser currentUser, List<NodeUser> connectedNodes) {
+    NodeUser currentUser,
+    List<NodeUser> connectedNodes,
+  ) {
     return connectedNodes.map((node) {
       return osm_map.Polyline(
         points: [
@@ -341,6 +377,79 @@ class _HomeScreenState extends State<HomeScreen> {
         pattern: osm_map.StrokePattern.dashed(segments: const [12.0, 6.0]),
       );
     }).toList();
+  }
+
+  Widget _buildGroupFilterChip({
+    required String label,
+    required bool isSelected,
+    required bool isLight,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        margin: const EdgeInsets.only(right: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        decoration: BoxDecoration(
+          color: isLight
+              ? (isSelected ? AppTheme.electricCyan : Colors.white.withValues(alpha: 0.9))
+              : (isSelected
+                  ? AppTheme.electricCyan.withValues(alpha: 0.28)
+                  : AppTheme.deepNavy.withValues(alpha: 0.8)),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected
+                ? AppTheme.electricCyan
+                : (isLight
+                    ? const Color(0xFFCBD5E1)
+                    : const Color(0xFF00F0FF).withValues(alpha: 0.25)),
+            width: isSelected ? 1.6 : 1.0,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: AppTheme.electricCyan.withValues(alpha: 0.45),
+                    blurRadius: 10,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: isLight ? 0.08 : 0.25),
+                    blurRadius: 4,
+                  ),
+                ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isSelected) ...[
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isLight ? const Color(0xFF0F172A) : AppTheme.electricCyan,
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                color: isLight
+                    ? (isSelected ? const Color(0xFF0F172A) : const Color(0xFF334155))
+                    : (isSelected ? const Color(0xFF00F0FF) : AppTheme.textSecondary),
+                letterSpacing: 0.2,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -356,9 +465,10 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<NodeLinkProvider>();
+    final isLight = Theme.of(context).brightness == Brightness.light;
     final currentUser = provider.currentUser;
     final connectedNodes = provider.connectedNodes;
-    final hasNeighbors = connectedNodes.isNotEmpty;
+    final groups = provider.groups;
 
     // Consolidate live streams for all connected neighbors
     _syncNeighborStreams(connectedNodes);
@@ -367,12 +477,59 @@ class _HomeScreenState extends State<HomeScreen> {
         ? _liveNeighbors.values.toList()
         : connectedNodes;
 
-    final markers = _buildMarkers(currentUser, activeNeighbors);
-    final polylines = _buildPolylines(currentUser, activeNeighbors);
+    // Filter neighbors by selected group if active
+    List<NodeUser> displayNeighbors = activeNeighbors;
+    if (_selectedGroupId != null) {
+      final selectedGroup = groups.firstWhere(
+        (g) => g.id == _selectedGroupId,
+        orElse: () => NeighborGroup(id: '', name: '', members: {}),
+      );
+      displayNeighbors = activeNeighbors
+          .where((node) => selectedGroup.containsMember(node.id))
+          .toList();
+    }
+
+    final hasNeighbors = displayNeighbors.isNotEmpty;
+
+    final markers = _buildMarkers(currentUser, displayNeighbors, isLight: isLight);
+    final polylines = _buildPolylines(currentUser, displayNeighbors);
+
+    // Resolve Map Tile Layer URL & Attribution based on Map Theme preference
+    final mapTheme = provider.mapTheme;
+    String tileUrl;
+    String attributionText;
+
+    switch (mapTheme) {
+      case AppMapTheme.cartoLight:
+        tileUrl = 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
+        attributionText = '© CARTO, © OpenStreetMap';
+        break;
+      case AppMapTheme.darkMatter:
+        tileUrl = 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
+        attributionText = '© CARTO, © OpenStreetMap';
+        break;
+      case AppMapTheme.satellite:
+        tileUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+        attributionText = '© Esri, Maxar';
+        break;
+      case AppMapTheme.street:
+        tileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+        attributionText = '© OpenStreetMap contributors';
+        break;
+      case AppMapTheme.auto:
+        if (isLight) {
+          tileUrl = 'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
+          attributionText = '© CARTO, © OpenStreetMap';
+        } else {
+          tileUrl = 'https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
+          attributionText = '© CARTO, © OpenStreetMap';
+        }
+        break;
+    }
 
     return Scaffold(
       key: _scaffoldKey,
-      backgroundColor: AppTheme.deepNavy,
+      backgroundColor: isLight ? const Color(0xFFF1F5F9) : AppTheme.deepNavy,
       drawer: const SideMenuDrawer(),
       body: Column(
         children: [
@@ -381,7 +538,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                // 1. FlutterMap with Free OpenStreetMap Cyber Dark Layer
+                // 1. FlutterMap with Dynamic Map Theming
                 osm_map.FlutterMap(
                   mapController: _mapController,
                   options: const osm_map.MapOptions(
@@ -391,21 +548,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     maxZoom: 18.0,
                   ),
                   children: [
-                    // 100% Free OpenStreetMap with Cyber Dark Filter
+                    // Dynamic Tile Layer (Carto Light, Dark Matter, Satellite, Street)
                     osm_map.TileLayer(
-                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      key: ValueKey(tileUrl),
+                      urlTemplate: tileUrl,
                       userAgentPackageName: 'com.example.nodelink',
-                      tileBuilder: (context, tileWidget, tile) {
-                        return ColorFiltered(
-                          colorFilter: const ColorFilter.matrix(<double>[
-                            -0.65, 0.0, 0.0, 0.0, 170.0,
-                            0.0, -0.65, 0.0, 0.0, 180.0,
-                            0.0, 0.0, -0.60, 0.0, 200.0,
-                            0.0, 0.0, 0.0, 1.0, 0.0,
-                          ]),
-                          child: tileWidget,
-                        );
-                      },
                     ),
 
                     // Cyber Cyan Mesh Polylines
@@ -445,7 +592,44 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
-                // 3. Map Compass Control (Reset Bearing to North) - Matching Cyber-Dark Aesthetic
+                // 3. Group Filter Horizontal Chips Overlay (Requirement 3)
+                if (groups.isNotEmpty || connectedNodes.isNotEmpty)
+                  Positioned(
+                    top: MediaQuery.of(context).padding.top + 58,
+                    left: 16,
+                    right: 72,
+                    child: SizedBox(
+                      height: 38,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
+                        children: [
+                          _buildGroupFilterChip(
+                            label: 'All (${activeNeighbors.length})',
+                            isSelected: _selectedGroupId == null,
+                            isLight: isLight,
+                            onTap: () => setState(() => _selectedGroupId = null),
+                          ),
+                          ...groups.map((group) {
+                            final count = activeNeighbors
+                                .where((n) => group.containsMember(n.id))
+                                .length;
+                            final isSelected = _selectedGroupId == group.id;
+                            return _buildGroupFilterChip(
+                              label: '${group.name} ($count)',
+                              isSelected: isSelected,
+                              isLight: isLight,
+                              onTap: () => setState(() {
+                                _selectedGroupId = isSelected ? null : group.id;
+                              }),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                // 4. Map Compass Control (Reset Bearing to North)
                 Positioned(
                   top: MediaQuery.of(context).padding.top + 70,
                   right: 18,
@@ -457,7 +641,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         height: 44,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: AppTheme.deepNavy.withValues(alpha: 0.8),
+                          color: isLight
+                              ? Colors.white.withValues(alpha: 0.9)
+                              : AppTheme.deepNavy.withValues(alpha: 0.8),
                           border: Border.all(
                             color: const Color(0xFF00F0FF),
                             width: 1.5,
@@ -491,16 +677,64 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
-                // 4. Fallback UI Overlay if Location Permissions Denied
-                if (_isPermissionDenied) _buildPermissionDeniedOverlay(),
+                // 5. Map Theme Switcher Button (Directly below compass rose - Requirement 4)
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 124,
+                  right: 18,
+                  child: ClipOval(
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                      child: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isLight
+                              ? Colors.white.withValues(alpha: 0.9)
+                              : AppTheme.deepNavy.withValues(alpha: 0.8),
+                          border: Border.all(
+                            color: const Color(0xFF00F0FF),
+                            width: 1.5,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF00F0FF).withValues(alpha: 0.4),
+                              blurRadius: 12,
+                              spreadRadius: 1,
+                            ),
+                          ],
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: () {
+                              MapThemeDialog.show(context);
+                            },
+                            child: const Center(
+                              child: Icon(
+                                Icons.layers_rounded,
+                                color: Color(0xFF00F0FF),
+                                size: 22,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
 
-                // 5. Floating Re-Center GPS Button
+                // 6. Fallback UI Overlay if Location Permissions Denied
+                if (_isPermissionDenied) _buildPermissionDeniedOverlay(isLight),
+
+                // 7. Floating Re-Center GPS Button
                 Positioned(
                   right: 18,
                   bottom: hasNeighbors ? 128 : 210,
                   child: FloatingActionButton.small(
                     heroTag: 'gps_center_btn',
-                    backgroundColor: AppTheme.deepNavy,
+                    backgroundColor: isLight ? Colors.white : AppTheme.deepNavy,
                     foregroundColor: const Color(0xFF00F0FF),
                     elevation: 6,
                     shape: const CircleBorder(
@@ -521,32 +755,36 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
-                // 6. OpenStreetMap Attribution Badge
+                // 8. Map Attribution Badge
                 Positioned(
                   left: 20,
                   bottom: hasNeighbors ? 96 : 196,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: AppTheme.deepNavy.withValues(alpha: 0.75),
+                      color: isLight
+                          ? Colors.white.withValues(alpha: 0.88)
+                          : AppTheme.deepNavy.withValues(alpha: 0.75),
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(
-                        color: const Color(0xFF00F0FF).withValues(alpha: 0.2),
+                        color: isLight
+                            ? const Color(0xFFCBD5E1)
+                            : const Color(0xFF00F0FF).withValues(alpha: 0.2),
                         width: 0.8,
                       ),
                     ),
-                    child: const Text(
-                      '© OpenStreetMap contributors',
+                    child: Text(
+                      attributionText,
                       style: TextStyle(
                         fontSize: 9,
-                        color: AppTheme.textSecondary,
+                        color: isLight ? const Color(0xFF64748B) : AppTheme.textSecondary,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
                   ),
                 ),
 
-                // 7. Floating Bottom Section Pinned to Bottom
+                // 9. Floating Bottom Section Pinned to Bottom
                 Positioned(
                   left: 20,
                   right: 20,
@@ -555,7 +793,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       // Adaptive Polling HUD
-                      _buildAdaptivePollingHUD(provider),
+                      _buildAdaptivePollingHUD(provider, isLight),
 
                       const SizedBox(height: 12),
 
@@ -563,8 +801,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       AnimatedSwitcher(
                         duration: const Duration(milliseconds: 300),
                         child: hasNeighbors
-                            ? _buildPopulatedBottomTray(activeNeighbors)
-                            : _buildEmptyStateCard(),
+                            ? _buildPopulatedBottomTray(displayNeighbors, isLight)
+                            : _buildEmptyStateCard(isLight),
                       ),
                     ],
                   ),
@@ -578,7 +816,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// Fallback UI Overlay when Location Permissions are Permanently Denied
-  Widget _buildPermissionDeniedOverlay() {
+  Widget _buildPermissionDeniedOverlay(bool isLight) {
     return Positioned.fill(
       child: Container(
         color: Colors.black.withValues(alpha: 0.55),
@@ -591,7 +829,9 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
               decoration: BoxDecoration(
-                color: AppTheme.deepNavy.withValues(alpha: 0.92),
+                color: isLight
+                    ? Colors.white.withValues(alpha: 0.95)
+                    : AppTheme.deepNavy.withValues(alpha: 0.92),
                 borderRadius: BorderRadius.circular(26),
                 border: Border.all(
                   color: AppTheme.warningRed.withValues(alpha: 0.5),
@@ -622,22 +862,22 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const SizedBox(height: 18),
-                  const Text(
+                  Text(
                     'Location Permission Required',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w800,
-                      color: Colors.white,
+                      color: isLight ? const Color(0xFF0F172A) : Colors.white,
                     ),
                   ),
                   const SizedBox(height: 10),
-                  const Text(
+                  Text(
                     'NodeLink requires access to your physical location to track node telemetry and render connected neighbors on the live map.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 13,
-                      color: AppTheme.textSecondary,
+                      color: isLight ? const Color(0xFF64748B) : AppTheme.textSecondary,
                       height: 1.4,
                     ),
                   ),
@@ -676,8 +916,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// EMPTY STATE CARD: Matching 1.jpeg exactly
-  Widget _buildEmptyStateCard() {
+  /// EMPTY STATE CARD: Adapts to Light Mode (matching Home.jpg) and Dark Mode (matching 1.jpeg)
+  Widget _buildEmptyStateCard(bool isLight) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(28),
       child: BackdropFilter(
@@ -686,15 +926,21 @@ class _HomeScreenState extends State<HomeScreen> {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 22),
           decoration: BoxDecoration(
-            color: AppTheme.deepNavy.withValues(alpha: 0.88),
+            color: isLight
+                ? const Color(0xFFE2F0FD).withValues(alpha: 0.94)
+                : AppTheme.deepNavy.withValues(alpha: 0.88),
             borderRadius: BorderRadius.circular(28),
             border: Border.all(
-              color: const Color(0xFF00F0FF).withValues(alpha: 0.35),
+              color: isLight
+                  ? const Color(0xFF93C5FD)
+                  : const Color(0xFF00F0FF).withValues(alpha: 0.35),
               width: 1.2,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.5),
+                color: isLight
+                    ? const Color(0xFF0284C7).withValues(alpha: 0.12)
+                    : Colors.black.withValues(alpha: 0.5),
                 blurRadius: 22,
                 offset: const Offset(0, 8),
               ),
@@ -703,23 +949,25 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'No Active Neighbors',
+              Text(
+                isLight ? 'Welcome to NodeLink!' : 'No Active Neighbors',
                 style: TextStyle(
                   fontSize: 19,
                   fontWeight: FontWeight.w800,
-                  color: Colors.white,
+                  color: isLight ? const Color(0xFF0F172A) : Colors.white,
                   letterSpacing: -0.2,
                 ),
               ),
               const SizedBox(height: 8),
-              const Text(
-                'Connect to nearby nodes via QR code or 6-digit node ID to share live telemetry and build your mesh.',
+              Text(
+                isLight
+                    ? 'Your map is empty. Add a neighbor to start sharing live locations.'
+                    : 'Connect to nearby nodes via QR code or 16-character node ID to share live telemetry and build your mesh.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w400,
-                  color: AppTheme.textSecondary,
+                  color: isLight ? const Color(0xFF334155) : AppTheme.textSecondary,
                   height: 1.38,
                 ),
               ),
@@ -768,7 +1016,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// POPULATED STATE: Horizontal Nodes Tray matching 2.jpg with circular add button at the end
-  Widget _buildPopulatedBottomTray(List<NodeUser> nodes) {
+  Widget _buildPopulatedBottomTray(List<NodeUser> nodes, bool isLight) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(32),
       child: BackdropFilter(
@@ -776,15 +1024,21 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            color: AppTheme.deepNavy.withValues(alpha: 0.88),
+            color: isLight
+                ? Colors.white.withValues(alpha: 0.94)
+                : AppTheme.deepNavy.withValues(alpha: 0.88),
             borderRadius: BorderRadius.circular(32),
             border: Border.all(
-              color: const Color(0xFF00F0FF).withValues(alpha: 0.35),
+              color: isLight
+                  ? const Color(0xFFCBD5E1)
+                  : const Color(0xFF00F0FF).withValues(alpha: 0.35),
               width: 1.2,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.5),
+                color: isLight
+                    ? Colors.black.withValues(alpha: 0.08)
+                    : Colors.black.withValues(alpha: 0.5),
                 blurRadius: 20,
                 offset: const Offset(0, 8),
               ),
@@ -817,7 +1071,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          // Avatar with glowing border and badge (matching 2.jpg)
+                          // Avatar with glowing border and badge
                           Stack(
                             clipBehavior: Clip.none,
                             children: [
@@ -842,7 +1096,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   child: _buildAvatarImage(node, iconSize: 26, fallbackColor: glowColor),
                                 ),
                               ),
-                              // Status badge (Alex has green dot, Emma/Jessica/Liam have location pin badge in 2.jpg)
+                              // Status badge
                               Positioned(
                                 top: -2,
                                 right: -2,
@@ -853,7 +1107,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     color: glowColor,
                                     shape: BoxShape.circle,
                                     border: Border.all(
-                                      color: AppTheme.deepNavy,
+                                      color: isLight ? Colors.white : AppTheme.deepNavy,
                                       width: 1.8,
                                     ),
                                     boxShadow: [
@@ -877,17 +1131,17 @@ class _HomeScreenState extends State<HomeScreen> {
                             ],
                           ),
                           const SizedBox(width: 10),
-                          // Name and Status (matching 2.jpg)
+                          // Name and Status
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
                                 node.name.split(' ').first,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w800,
-                                  color: Colors.white,
+                                  color: isLight ? const Color(0xFF0F172A) : Colors.white,
                                   letterSpacing: 0.2,
                                 ),
                               ),
@@ -915,21 +1169,21 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ],
                                 )
                               else
-                                const Row(
+                                Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     Icon(
                                       Icons.location_on,
                                       size: 13,
-                                      color: Color(0xFF6E85A8),
+                                      color: isLight ? const Color(0xFF64748B) : const Color(0xFF6E85A8),
                                     ),
-                                    SizedBox(width: 2),
+                                    const SizedBox(width: 2),
                                     Text(
                                       'Active',
                                       style: TextStyle(
                                         fontSize: 12.5,
                                         fontWeight: FontWeight.w600,
-                                        color: Color(0xFF8F9FB8),
+                                        color: isLight ? const Color(0xFF64748B) : const Color(0xFF8F9FB8),
                                       ),
                                     ),
                                   ],
@@ -942,7 +1196,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   );
                 }),
 
-                // Append Add Button at the very end of the horizontal sequence (Requirement 1)
+                // Append Add Button at the very end of the horizontal sequence
                 GestureDetector(
                   onTap: () {
                     Navigator.of(context).push(
@@ -954,7 +1208,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     height: 48,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: AppTheme.deepNavy.withValues(alpha: 0.9),
+                      color: isLight
+                          ? const Color(0xFFF1F5F9)
+                          : AppTheme.deepNavy.withValues(alpha: 0.9),
                       border: Border.all(
                         color: const Color(0xFF00F0FF),
                         width: 2.2,
@@ -985,7 +1241,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// Adaptive Polling HUD
-  Widget _buildAdaptivePollingHUD(NodeLinkProvider provider) {
+  Widget _buildAdaptivePollingHUD(NodeLinkProvider provider, bool isLight) {
     final motion = provider.motionState.displayName;
     final countdown = provider.secondsUntilNextPoll;
     final mins = countdown ~/ 60;
@@ -1000,14 +1256,18 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
           decoration: BoxDecoration(
-            color: isBatteryLow
-                ? AppTheme.warningRed.withValues(alpha: 0.15)
-                : AppTheme.spaceIndigo.withValues(alpha: 0.55),
+            color: isLight
+                ? Colors.white.withValues(alpha: 0.92)
+                : (isBatteryLow
+                    ? AppTheme.warningRed.withValues(alpha: 0.15)
+                    : AppTheme.spaceIndigo.withValues(alpha: 0.55)),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: isBatteryLow
                   ? AppTheme.warningRed.withValues(alpha: 0.5)
-                  : AppTheme.neonGreen.withValues(alpha: 0.3),
+                  : (isLight
+                      ? const Color(0xFFCBD5E1)
+                      : AppTheme.neonGreen.withValues(alpha: 0.3)),
               width: 1.0,
             ),
           ),
@@ -1021,7 +1281,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         ? Icons.directions_walk_rounded
                         : Icons.location_city_rounded),
                 size: 14,
-                color: isBatteryLow ? AppTheme.warningRed : AppTheme.neonGreen,
+                color: isBatteryLow
+                    ? AppTheme.warningRed
+                    : (isLight ? const Color(0xFF0F766E) : AppTheme.neonGreen),
               ),
               const SizedBox(width: 6),
               Text(
@@ -1031,7 +1293,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
-                  color: isBatteryLow ? AppTheme.warningRed : AppTheme.neonGreen,
+                  color: isBatteryLow
+                      ? AppTheme.warningRed
+                      : (isLight ? const Color(0xFF0F766E) : AppTheme.neonGreen),
                 ),
               ),
             ],
