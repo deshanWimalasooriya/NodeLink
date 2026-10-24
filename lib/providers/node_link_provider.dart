@@ -92,9 +92,11 @@ class NodeLinkProvider extends ChangeNotifier {
 
   Future<void> _init() async {
     final prefs = await SharedPreferences.getInstance();
-    final savedName = prefs.getString('nodelink_user_profile');
-    final savedId = prefs.getString('nodelink_node_id');
-    final savedProfilePic = prefs.getString('nodelink_profile_pic_url');
+    final savedUsername = prefs.getString('username') ?? prefs.getString('nodelink_user_profile');
+    final savedPhone = prefs.getString('phoneNumber') ?? '';
+    final savedId = prefs.getString('nodeId') ?? prefs.getString('nodelink_node_id');
+    final savedProfilePic = prefs.getString('profilePicUrl') ?? prefs.getString('nodelink_profile_pic_url');
+    final savedLocalPhoto = prefs.getString('localPhotoPath');
 
     // 1. Fetch real device GPS coordinates
     final realPos = await fetchRealGpsPosition();
@@ -106,14 +108,19 @@ class NodeLinkProvider extends ChangeNotifier {
       currentBattery = await Battery().batteryLevel;
     } catch (_) {}
 
-    if (savedName != null && savedName.isNotEmpty) {
+    final bool hasValidAuth = (savedUsername != null && savedUsername.trim().isNotEmpty) &&
+        (savedPhone.trim().isNotEmpty || prefs.getString('nodelink_user_profile') != null);
+
+    if (hasValidAuth) {
       _hasAccount = true;
       _currentUser = NodeUser(
         id: savedId ?? '842 - 915',
-        name: savedName,
-        email: '$savedName@nodelink.com',
-        phone: '',
-        avatarPath: 'assets/avatars/nuwan.jpg',
+        name: savedUsername,
+        email: '$savedUsername@nodelink.com',
+        phone: savedPhone,
+        avatarPath: (savedProfilePic != null && savedProfilePic.isNotEmpty)
+            ? savedProfilePic
+            : (savedLocalPhoto ?? 'assets/avatars/nuwan.jpg'),
         profilePicUrl: savedProfilePic,
         status: 'Online',
         isMoving: false,
@@ -164,13 +171,21 @@ class NodeLinkProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Initialize newly created account from CreateAccountScreen
+  /// Initialize newly created account from RegistrationSetupScreen / CreateAccountScreen
   /// Stores user on Firebase and ensures actual data is fetched back
   Future<void> initializeNewAccount({
     required String name,
     required String nodeId,
+    String phoneNumber = '',
+    String? profilePicUrl,
+    String? localPhotoPath,
   }) async {
     _hasAccount = true;
+
+    final cleanDigits = nodeId.replaceAll(RegExp(r'[^0-9]'), '');
+    final persistent6DigitId = cleanDigits.length >= 6
+        ? cleanDigits.substring(0, 6)
+        : (cleanDigits.isNotEmpty ? cleanDigits : nodeId);
 
     // 1. Fetch real physical GPS position
     final realPos = await fetchRealGpsPosition();
@@ -184,11 +199,14 @@ class NodeLinkProvider extends ChangeNotifier {
     } catch (_) {}
 
     _currentUser = NodeUser(
-      id: nodeId,
+      id: persistent6DigitId,
       name: name,
-      email: '',
-      phone: '',
-      avatarPath: 'assets/avatars/nuwan.jpg',
+      email: '$name@nodelink.com',
+      phone: phoneNumber,
+      avatarPath: (profilePicUrl != null && profilePicUrl.isNotEmpty)
+          ? profilePicUrl
+          : (localPhotoPath ?? 'assets/avatars/nuwan.jpg'),
+      profilePicUrl: profilePicUrl,
       status: 'Online',
       isMoving: false,
       batteryLevel: realBattery,
@@ -202,19 +220,39 @@ class NodeLinkProvider extends ChangeNotifier {
     _connectedNodes.clear();
 
     final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('username', name);
+    await prefs.setString('phoneNumber', phoneNumber);
+    await prefs.setString('nodeId', persistent6DigitId);
     await prefs.setString('nodelink_user_profile', name);
-    await prefs.setString('nodelink_node_id', nodeId);
+    await prefs.setString('nodelink_node_id', persistent6DigitId);
+    if (profilePicUrl != null && profilePicUrl.isNotEmpty) {
+      await prefs.setString('profilePicUrl', profilePicUrl);
+      await prefs.setString('nodelink_profile_pic_url', profilePicUrl);
+    }
+    if (localPhotoPath != null && localPhotoPath.isNotEmpty) {
+      await prefs.setString('localPhotoPath', localPhotoPath);
+    }
 
-    // 3. STORE NEW ACCOUNT TO FIREBASE REALTIME DATABASE
+    // 3. STORE NEW ACCOUNT TO FIREBASE REALTIME DATABASE at /users/<nodeId>
+    await FirebaseSyncService.instantiateUserRecord(
+      nodeId: persistent6DigitId,
+      name: name,
+      phoneNumber: phoneNumber,
+      profilePicUrl: profilePicUrl ?? '',
+      latitude: realLat,
+      longitude: realLng,
+      batteryLevel: realBattery,
+    );
     await FirebaseSyncService.syncNodeLocation(node: _currentUser);
 
     // 4. Verify by re-fetching actual data from Firebase backend
-    final backendUser = await FirebaseSyncService.fetchNode(nodeId);
+    final backendUser = await FirebaseSyncService.fetchNode(persistent6DigitId);
     if (backendUser != null) {
       _currentUser = backendUser.copyWith(
         isSelf: true,
         latitude: realLat,
         longitude: realLng,
+        phone: phoneNumber,
       );
     }
 
@@ -314,9 +352,14 @@ class NodeLinkProvider extends ChangeNotifier {
       final List<NodeUser> actualNeighbors = [];
 
       for (final connId in activeIds) {
-        final node = allNodes[connId] ?? allNodes[FirebaseSyncService.sanitizeKey(connId)];
+        final rawConnId = connId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+        final node = allNodes[connId] ??
+            allNodes[FirebaseSyncService.sanitizeKey(connId)] ??
+            allNodes[rawConnId];
         if (node != null && node.id != _currentUser.id) {
-          actualNeighbors.add(node);
+          if (!actualNeighbors.any((n) => n.id == node.id)) {
+            actualNeighbors.add(node);
+          }
         }
       }
 
@@ -429,7 +472,7 @@ class NodeLinkProvider extends ChangeNotifier {
     final cleanCode = inputCode.replaceAll(' ', '').replaceAll('-', '').trim();
     if (cleanCode.isEmpty) return false;
 
-    // 1. Link in Firebase: users/<user_id>/active_connections/<neighbor_id>: true
+    // 1. Two-way database write: User A <-> User B simultaneously
     await FirebaseSyncService.linkNodes(_currentUser.id, inputCode);
 
     // 2. Fetch neighbor data from Firebase backend
@@ -437,11 +480,11 @@ class NodeLinkProvider extends ChangeNotifier {
     if (remoteNode == null) {
       final key = FirebaseSyncService.sanitizeKey(inputCode);
       final all = await FirebaseSyncService.fetchAllNodes();
-      remoteNode = all[inputCode] ?? all[key];
+      remoteNode = all[inputCode] ?? all[key] ?? all[cleanCode];
     }
 
     if (remoteNode != null) {
-      _connectedNodes.removeWhere((n) => n.id == remoteNode!.id);
+      _connectedNodes.removeWhere((n) => n.id == remoteNode!.id || n.id == inputCode || n.id == cleanCode);
       _connectedNodes.add(remoteNode);
       notifyListeners();
       return true;
@@ -451,9 +494,11 @@ class NodeLinkProvider extends ChangeNotifier {
     final random = Random();
     final names = ['Sarah', 'David', 'Marcus', 'Chloe', 'Noah'];
     final name = names[random.nextInt(names.length)];
-    final idStr = inputCode.length >= 6
-        ? '${inputCode.substring(0, 3)} - ${inputCode.substring(3, min(6, inputCode.length))}'
-        : 'node-$cleanCode';
+    final idStr = cleanCode.length == 6
+        ? cleanCode
+        : (inputCode.length >= 6
+            ? '${inputCode.substring(0, 3)} - ${inputCode.substring(3, min(6, inputCode.length))}'
+            : 'node-$cleanCode');
 
     final newNode = NodeUser(
       id: idStr,
@@ -519,8 +564,19 @@ class NodeLinkProvider extends ChangeNotifier {
     );
 
     if (downloadUrl != null && downloadUrl.isNotEmpty) {
-      _currentUser = _currentUser.copyWith(profilePicUrl: downloadUrl);
+      // Explicitly write URL to user's Realtime Database node
+      await FirebaseSyncService.updateProfilePhotoUrl(
+        nodeId: _currentUser.id,
+        photoUrl: downloadUrl,
+      );
+
+      // Update local state so UI reflects the change immediately
+      _currentUser = _currentUser.copyWith(
+        profilePicUrl: downloadUrl,
+        avatarPath: downloadUrl,
+      );
       final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('profilePicUrl', downloadUrl);
       await prefs.setString('nodelink_profile_pic_url', downloadUrl);
       notifyListeners();
     }

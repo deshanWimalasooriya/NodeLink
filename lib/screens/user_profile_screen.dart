@@ -10,7 +10,7 @@ import '../core/widgets/cyber_app_bar.dart';
 import '../core/widgets/cyber_avatar.dart';
 import '../core/widgets/cyber_toggle.dart';
 import '../providers/node_link_provider.dart';
-import 'create_account_screen.dart';
+import 'onboarding_welcome_screen.dart';
 
 class UserProfileScreen extends StatefulWidget {
   const UserProfileScreen({super.key});
@@ -457,7 +457,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     await provider.logout();
                     if (context.mounted) {
                       Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-                        MaterialPageRoute(builder: (_) => const CreateAccountScreen()),
+                        MaterialPageRoute(builder: (_) => const OnboardingWelcomeScreen()),
                         (route) => false,
                       );
                     }

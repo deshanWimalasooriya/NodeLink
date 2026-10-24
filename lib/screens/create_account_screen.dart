@@ -29,7 +29,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
     final random = Random();
     final part1 = 100 + random.nextInt(900);
     final part2 = 100 + random.nextInt(900);
-    return '$part1 - $part2';
+    return '$part1$part2';
   }
 
   void _regenerateId() {

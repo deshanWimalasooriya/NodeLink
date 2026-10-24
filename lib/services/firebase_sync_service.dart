@@ -66,6 +66,75 @@ class FirebaseSyncService {
     return true;
   }
 
+  /// Instantiate newly registered user record inside Firebase Realtime Database
+  /// Exactly matches: `/users/<nodeId>` { name, phoneNumber, nodeId, status: 'online', is_moving: false, profilePicUrl: '' }
+  static Future<bool> instantiateUserRecord({
+    required String nodeId,
+    required String name,
+    required String phoneNumber,
+    String profilePicUrl = '',
+    double latitude = 6.9271,
+    double longitude = 79.8612,
+    int batteryLevel = 85,
+  }) async {
+    final cleanDigits = nodeId.replaceAll(RegExp(r'[^0-9]'), '');
+    final persistent6DigitId = cleanDigits.length >= 6
+        ? cleanDigits.substring(0, 6)
+        : (cleanDigits.isNotEmpty ? cleanDigits : nodeId);
+
+    final Map<String, dynamic> record = {
+      'name': name,
+      'username': name,
+      'phoneNumber': phoneNumber,
+      'phone': phoneNumber,
+      'nodeId': persistent6DigitId,
+      'id': nodeId,
+      'status': 'online',
+      'is_moving': false,
+      'profilePicUrl': profilePicUrl,
+      'profile_pic_url': profilePicUrl,
+      'battery': batteryLevel,
+      'avatar': profilePicUrl.isNotEmpty ? profilePicUrl : 'assets/avatars/nuwan.jpg',
+      'location': {
+        'lat': latitude,
+        'lng': longitude,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      },
+    };
+
+    if (firebaseDatabaseUrl != null && firebaseDatabaseUrl!.isNotEmpty) {
+      try {
+        final cleanUrl = cleanDatabaseUrl(firebaseDatabaseUrl!);
+        final key = sanitizeKey(nodeId);
+
+        final futures = <Future<http.Response>>[];
+
+        // 1. Put to sanitized key: /users/<key>.json
+        futures.add(http.put(
+          Uri.parse('$cleanUrl/users/$key.json'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(record),
+        ));
+
+        // 2. Also put directly to persistent 6-digit numeric key: /users/<persistent6DigitId>.json
+        if (persistent6DigitId.isNotEmpty && persistent6DigitId != key) {
+          futures.add(http.put(
+            Uri.parse('$cleanUrl/users/$persistent6DigitId.json'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(record),
+          ));
+        }
+
+        await Future.wait(futures).timeout(const Duration(seconds: 6));
+        debugPrint('Firebase instantiated user record successfully for nodeId: $nodeId ($persistent6DigitId)');
+        return true;
+      } catch (e) {
+        debugPrint('Error instantiating user record in Firebase: $e');
+      }
+    }
+    return false;
+  }
+
   /// Fetch all active nodes directly from Firebase Realtime Database
   /// Returns a map of key -> NodeUser
   static Future<Map<String, NodeUser>> fetchAllNodes() async {
@@ -82,8 +151,9 @@ class FirebaseSyncService {
           if (data is Map<String, dynamic>) {
             data.forEach((key, val) {
               if (val is Map<String, dynamic>) {
-                final id = (val['id'] as String?) ?? key;
+                final id = (val['id'] as String?) ?? (val['nodeId'] as String?) ?? key;
                 results[id] = NodeUser.fromFirebaseJson(id, val);
+                results[key] = results[id]!;
               }
             });
           }
@@ -110,12 +180,16 @@ class FirebaseSyncService {
       try {
         final cleanUrl = cleanDatabaseUrl(firebaseDatabaseUrl!);
         final key = sanitizeKey(nodeId);
-        final uri = Uri.parse('$cleanUrl/users/$key.json');
+        final rawKey = nodeId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
 
-        final response = await http.get(uri).timeout(const Duration(seconds: 5));
+        http.Response response = await http.get(Uri.parse('$cleanUrl/users/$key.json')).timeout(const Duration(seconds: 5));
+        if ((response.statusCode != 200 || response.body == 'null') && rawKey.isNotEmpty && rawKey != key) {
+          response = await http.get(Uri.parse('$cleanUrl/users/$rawKey.json')).timeout(const Duration(seconds: 5));
+        }
+
         if (response.statusCode == 200 && response.body != 'null') {
           final data = jsonDecode(response.body) as Map<String, dynamic>;
-          final id = (data['id'] as String?) ?? nodeId;
+          final id = (data['id'] as String?) ?? (data['nodeId'] as String?) ?? nodeId;
           return NodeUser.fromFirebaseJson(id, data);
         }
       } catch (e) {
@@ -142,29 +216,82 @@ class FirebaseSyncService {
     return false;
   }
 
-  /// Link two node IDs as active connections in Firebase Realtime Database
-  static Future<bool> linkNodes(String userId, String neighborId) async {
+  /// Two-Way Simultaneous Database Write:
+  /// Writes simultaneously to:
+  /// 1. `users/<user_a_id>/active_connections/<user_b_id> = true`
+  /// 2. `users/<user_b_id>/active_connections/<user_a_id> = true`
+  static Future<bool> linkNodes(String userAId, String userBId) async {
     if (firebaseDatabaseUrl == null || firebaseDatabaseUrl!.isEmpty) return false;
     try {
       final cleanUrl = cleanDatabaseUrl(firebaseDatabaseUrl!);
-      final userKey = sanitizeKey(userId);
-      final neighborKey = sanitizeKey(neighborId);
 
-      // 1. Link in user's active_connections: users/<user_id>/active_connections/<neighbor_id>: true
-      await http.put(
-        Uri.parse('$cleanUrl/users/$userKey/active_connections/$neighborKey.json'),
+      final userAKey = sanitizeKey(userAId);
+      final userARaw = userAId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+
+      final userBKey = sanitizeKey(userBId);
+      final userBRaw = userBId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+
+      final futures = <Future<http.Response>>[];
+
+      // Path 1: users/<user_a_id>/active_connections/<user_b_id> = true
+      futures.add(http.put(
+        Uri.parse('$cleanUrl/users/$userAKey/active_connections/$userBKey.json'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(true),
-      );
+      ));
+      if (userBRaw.isNotEmpty && userBRaw != userBKey) {
+        futures.add(http.put(
+          Uri.parse('$cleanUrl/users/$userAKey/active_connections/$userBRaw.json'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(true),
+        ));
+      }
+      if (userARaw.isNotEmpty && userARaw != userAKey) {
+        futures.add(http.put(
+          Uri.parse('$cleanUrl/users/$userARaw/active_connections/$userBKey.json'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(true),
+        ));
+        if (userBRaw.isNotEmpty && userBRaw != userBKey) {
+          futures.add(http.put(
+            Uri.parse('$cleanUrl/users/$userARaw/active_connections/$userBRaw.json'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(true),
+          ));
+        }
+      }
 
-      // 2. Mutual link in neighbor's active_connections
-      await http.put(
-        Uri.parse('$cleanUrl/users/$neighborKey/active_connections/$userKey.json'),
+      // Path 2: users/<user_b_id>/active_connections/<user_a_id> = true
+      futures.add(http.put(
+        Uri.parse('$cleanUrl/users/$userBKey/active_connections/$userAKey.json'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode(true),
-      );
+      ));
+      if (userARaw.isNotEmpty && userARaw != userAKey) {
+        futures.add(http.put(
+          Uri.parse('$cleanUrl/users/$userBKey/active_connections/$userARaw.json'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(true),
+        ));
+      }
+      if (userBRaw.isNotEmpty && userBRaw != userBKey) {
+        futures.add(http.put(
+          Uri.parse('$cleanUrl/users/$userBRaw/active_connections/$userAKey.json'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(true),
+        ));
+        if (userARaw.isNotEmpty && userARaw != userAKey) {
+          futures.add(http.put(
+            Uri.parse('$cleanUrl/users/$userBRaw/active_connections/$userARaw.json'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(true),
+          ));
+        }
+      }
 
-      debugPrint('Successfully linked nodes in Firebase: $userKey <-> $neighborKey');
+      // Simultaneously execute all bidirectional writes
+      await Future.wait(futures).timeout(const Duration(seconds: 6));
+      debugPrint('Simultaneously linked nodes in Firebase: $userAId <-> $userBId');
       return true;
     } catch (e) {
       debugPrint('Error linking nodes in Firebase: $e');
@@ -179,11 +306,35 @@ class FirebaseSyncService {
     try {
       final cleanUrl = cleanDatabaseUrl(firebaseDatabaseUrl!);
       final userKey = sanitizeKey(userId);
-      final response = await http.get(Uri.parse('$cleanUrl/users/$userKey/active_connections.json'));
-      if (response.statusCode == 200 && response.body != 'null') {
-        final data = jsonDecode(response.body);
+      final rawKey = userId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+
+      final res1 = await http.get(Uri.parse('$cleanUrl/users/$userKey/active_connections.json'));
+      if (res1.statusCode == 200 && res1.body != 'null') {
+        final data = jsonDecode(res1.body);
         if (data is Map<String, dynamic>) {
-          connections.addAll(data.keys);
+          for (final entry in data.entries) {
+            if (entry.value == true || entry.value == 'true' || entry.value != null) {
+              if (!connections.contains(entry.key)) {
+                connections.add(entry.key);
+              }
+            }
+          }
+        }
+      }
+
+      if (rawKey.isNotEmpty && rawKey != userKey) {
+        final res2 = await http.get(Uri.parse('$cleanUrl/users/$rawKey/active_connections.json'));
+        if (res2.statusCode == 200 && res2.body != 'null') {
+          final data = jsonDecode(res2.body);
+          if (data is Map<String, dynamic>) {
+            for (final entry in data.entries) {
+              if (entry.value == true || entry.value == 'true' || entry.value != null) {
+                if (!connections.contains(entry.key)) {
+                  connections.add(entry.key);
+                }
+              }
+            }
+          }
         }
       }
     } catch (e) {
@@ -192,16 +343,50 @@ class FirebaseSyncService {
     return connections;
   }
 
+  /// Multi-Stream Neighbor Tracking:
+  /// Stream that emits live updates for a single neighbor node (`users/<neighbor_id>.json`)
+  /// Tracks live latitude, longitude, and profilePicUrl.
+  static Stream<NodeUser?> streamNeighborNode(String neighborId) async* {
+    if (firebaseDatabaseUrl == null || firebaseDatabaseUrl!.isEmpty) return;
+    final cleanUrl = cleanDatabaseUrl(firebaseDatabaseUrl!);
+    final key = sanitizeKey(neighborId);
+    final rawKey = neighborId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+
+    while (true) {
+      try {
+        http.Response res = await http.get(Uri.parse('$cleanUrl/users/$key.json')).timeout(const Duration(seconds: 4));
+        if ((res.statusCode != 200 || res.body == 'null') && rawKey.isNotEmpty && rawKey != key) {
+          res = await http.get(Uri.parse('$cleanUrl/users/$rawKey.json')).timeout(const Duration(seconds: 4));
+        }
+
+        if (res.statusCode == 200 && res.body != 'null') {
+          final data = jsonDecode(res.body);
+          if (data is Map<String, dynamic>) {
+            final node = NodeUser.fromFirebaseJson(neighborId, data);
+            yield node;
+          }
+        }
+      } catch (e) {
+        debugPrint('Error streaming neighbor node $neighborId: $e');
+      }
+      await Future.delayed(const Duration(seconds: 3));
+    }
+  }
+
   /// Stream that listens to a neighbor node's location in Firebase
   /// Listens to `users/<neighbor_id>/location`
   static Stream<Map<String, dynamic>?> streamNeighborLocation(String neighborId) async* {
     if (firebaseDatabaseUrl == null || firebaseDatabaseUrl!.isEmpty) return;
     final cleanUrl = cleanDatabaseUrl(firebaseDatabaseUrl!);
     final key = sanitizeKey(neighborId);
+    final rawKey = neighborId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
 
     while (true) {
       try {
-        final res = await http.get(Uri.parse('$cleanUrl/users/$key/location.json'));
+        http.Response res = await http.get(Uri.parse('$cleanUrl/users/$key/location.json'));
+        if ((res.statusCode != 200 || res.body == 'null') && rawKey.isNotEmpty && rawKey != key) {
+          res = await http.get(Uri.parse('$cleanUrl/users/$rawKey/location.json'));
+        }
         if (res.statusCode == 200 && res.body != 'null') {
           final data = jsonDecode(res.body);
           if (data is Map<String, dynamic>) {
@@ -209,7 +394,7 @@ class FirebaseSyncService {
           }
         }
       } catch (_) {}
-      await Future.delayed(const Duration(seconds: 4));
+      await Future.delayed(const Duration(seconds: 3));
     }
   }
 
@@ -256,19 +441,20 @@ class FirebaseSyncService {
       debugPrint('Firebase Storage upload error: $e');
     }
 
-    // Resilient Fallback: If cloud storage bucket rejected or offline, store compact base64
+    // Resilient Fallback: If cloud storage bucket offline or rejected, store compact base64
     // so profile picture still renders smoothly and saves to Firebase RTDB
     if (publicUrl == null || publicUrl.isEmpty) {
       publicUrl = 'data:image/jpeg;base64,${base64Encode(imageBytes)}';
     }
 
-    // 2. Save download URL to the user's data node in Firebase Realtime Database
+    // 2. CRITICAL FIX: Explicitly write download URL back to user's Realtime Database node
     await updateProfilePhotoUrl(nodeId: nodeId, photoUrl: publicUrl);
 
     return publicUrl;
   }
 
-  /// Update profile photo URL directly in Firebase Realtime Database: `users/<node_id>/profile_pic_url`
+  /// Explicitly write profile photo URL back to user's Realtime Database node
+  /// Equivalent to: FirebaseDatabase.instance.ref('users/$nodeId').update({'profilePicUrl': downloadUrl});
   static Future<bool> updateProfilePhotoUrl({
     required String nodeId,
     required String photoUrl,
@@ -277,15 +463,34 @@ class FirebaseSyncService {
     try {
       final cleanUrl = cleanDatabaseUrl(firebaseDatabaseUrl!);
       final key = sanitizeKey(nodeId);
-      final uri = Uri.parse('$cleanUrl/users/$key/profile_pic_url.json');
+      final rawKey = nodeId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
 
-      final res = await http.put(
-        uri,
+      final patchBody = jsonEncode({
+        'profilePicUrl': photoUrl,
+        'profile_pic_url': photoUrl,
+        'avatar': photoUrl,
+      });
+
+      final futures = <Future<http.Response>>[];
+      // Update users/<key>
+      futures.add(http.patch(
+        Uri.parse('$cleanUrl/users/$key.json'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(photoUrl),
-      ).timeout(const Duration(seconds: 6));
+        body: patchBody,
+      ));
 
-      return res.statusCode == 200;
+      // Also update users/<rawKey>
+      if (rawKey.isNotEmpty && rawKey != key) {
+        futures.add(http.patch(
+          Uri.parse('$cleanUrl/users/$rawKey.json'),
+          headers: {'Content-Type': 'application/json'},
+          body: patchBody,
+        ));
+      }
+
+      final results = await Future.wait(futures).timeout(const Duration(seconds: 6));
+      debugPrint('Explicitly updated profilePicUrl in Firebase RTDB for nodeId: $nodeId');
+      return results.any((r) => r.statusCode == 200);
     } catch (e) {
       debugPrint('Error updating profile photo URL in Firebase RTDB: $e');
       return false;

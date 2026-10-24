@@ -33,12 +33,16 @@ class NodeUser {
   Map<String, dynamic> toFirebaseJson() {
     return {
       'id': id,
+      'nodeId': id,
       'name': name,
+      'username': name,
       'email': email,
       'phone': phone,
+      'phoneNumber': phone,
       'avatar': avatarPath,
       'profile_pic_url': profilePicUrl,
-      'status': status,
+      'profilePicUrl': profilePicUrl ?? '',
+      'status': status.toLowerCase() == 'online' ? 'online' : status,
       'is_moving': isMoving,
       'battery': batteryLevel,
       'location': {
@@ -55,13 +59,17 @@ class NodeUser {
     final lng = (loc['lng'] as num?)?.toDouble() ?? 79.8612;
     final timestamp = (loc['timestamp'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch;
 
+    final resolvedPhone = (json['phoneNumber'] as String?) ?? (json['phone'] as String?) ?? '';
+    final resolvedName = (json['name'] as String?) ?? (json['username'] as String?) ?? 'Unknown Node';
+    final resolvedId = (json['nodeId'] as String?) ?? (json['id'] as String?) ?? id;
+
     return NodeUser(
-      id: (json['id'] as String?) ?? id,
-      name: (json['name'] as String?) ?? 'Unknown Node',
+      id: resolvedId,
+      name: resolvedName,
       email: (json['email'] as String?) ?? '',
-      phone: (json['phone'] as String?) ?? '',
+      phone: resolvedPhone,
       avatarPath: (json['avatar'] as String?) ?? avatar ?? 'assets/avatars/alex.jpg',
-      profilePicUrl: (json['profile_pic_url'] as String?) ?? (json['profilePicUrl'] as String?),
+      profilePicUrl: (json['profilePicUrl'] as String?) ?? (json['profile_pic_url'] as String?),
       status: (json['status'] as String?) ?? 'Active',
       isMoving: (json['is_moving'] as bool?) ?? false,
       batteryLevel: (json['battery'] as num?)?.toInt() ?? 85,

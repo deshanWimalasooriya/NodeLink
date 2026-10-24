@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'core/theme/app_theme.dart';
 import 'providers/node_link_provider.dart';
 import 'screens/home_screen.dart';
-import 'screens/onboarding_screen.dart';
+import 'screens/onboarding_welcome_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -21,14 +21,19 @@ void main() async {
   );
 
   final prefs = await SharedPreferences.getInstance();
-  final hasAccount = prefs.getString('nodelink_user_profile') != null;
+  final username = prefs.getString('username') ?? prefs.getString('nodelink_user_profile');
+  final phoneNumber = prefs.getString('phoneNumber');
+
+  // Auth State Gateway: check for existence of username and phoneNumber strings
+  final bool hasAuth = (username != null && username.trim().isNotEmpty) &&
+      (phoneNumber != null && phoneNumber.trim().isNotEmpty);
 
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => NodeLinkProvider()),
       ],
-      child: NodeLinkApp(hasAccount: hasAccount),
+      child: NodeLinkApp(hasAccount: hasAuth),
     ),
   );
 }
@@ -43,7 +48,7 @@ class NodeLinkApp extends StatelessWidget {
       title: 'NodeLink',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
-      home: hasAccount ? const HomeScreen() : const OnboardingScreen(),
+      home: hasAccount ? const HomeScreen() : const OnboardingWelcomeScreen(),
     );
   }
 }

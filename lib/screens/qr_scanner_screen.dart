@@ -53,60 +53,77 @@ class _QrScannerScreenState extends State<QrScannerScreen>
       final rawValue = barcode.rawValue;
       if (rawValue == null || rawValue.isEmpty) continue;
 
-      // Extract 6 digits (format: 842-915, 842 - 915, 842915, nodelink:842-915, etc.)
+      // Extract 6 digits (format: 842-915, 842 - 915, 842915, nodelink:842-915, etc.) or Node key
       final digitsMatch = RegExp(r'\d{3}\s*-?\s*\d{3}|\d{6}').firstMatch(rawValue);
+      String targetNodeId = '';
+
       if (digitsMatch != null) {
         final digits = digitsMatch.group(0)!.replaceAll(RegExp(r'\D'), '');
         if (digits.length == 6) {
-          setState(() {
-            _isProcessing = true;
-          });
+          targetNodeId = digits;
+        }
+      }
 
-          // 1. Pause camera feed
-          await _scannerController.stop();
+      if (targetNodeId.isEmpty) {
+        final clean = rawValue.replaceFirst('nodelink:', '').trim();
+        if (clean.isNotEmpty) {
+          targetNodeId = clean;
+        }
+      }
 
-          final formattedNodeId = '${digits.substring(0, 3)} - ${digits.substring(3, 6)}';
+      if (targetNodeId.isNotEmpty) {
+        setState(() {
+          _isProcessing = true;
+        });
 
-          if (!mounted) return;
-          final provider = context.read<NodeLinkProvider>();
+        // 1. Pause camera feed
+        await _scannerController.stop();
 
-          // 2. Automatically link Node ID in Firebase Realtime Database
-          await provider.linkDevice(formattedNodeId);
+        if (!mounted) return;
+        final provider = context.read<NodeLinkProvider>();
 
-          if (!mounted) return;
+        // 2. Two-Way Simultaneous Database Write:
+        // users/<user_a_id>/active_connections/<user_b_id> = true
+        // users/<user_b_id>/active_connections/<user_a_id> = true
+        await provider.linkDevice(targetNodeId);
 
-          // 3. Display success message (Snackbar)
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.check_circle_rounded, color: AppTheme.neonGreen),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Node $formattedNodeId successfully paired!',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                      ),
+        if (!mounted) return;
+
+        // 3. Display success SnackBar
+        final displayId = targetNodeId.length == 6
+            ? '${targetNodeId.substring(0, 3)} - ${targetNodeId.substring(3, 6)}'
+            : targetNodeId;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: AppTheme.neonGreen),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Node $displayId successfully paired!',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                ],
-              ),
-              backgroundColor: AppTheme.surfaceDark,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: const BorderSide(color: AppTheme.neonGreen, width: 1.5),
-              ),
-              duration: const Duration(seconds: 3),
+                ),
+              ],
             ),
-          );
+            backgroundColor: AppTheme.surfaceDark,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: AppTheme.neonGreen, width: 1.5),
+            ),
+            duration: const Duration(seconds: 3),
+          ),
+        );
 
-          // 4. Automatically pop scanner screen and return to Live Map
-          Navigator.of(context).popUntil((route) => route.isFirst);
-          return;
-        }
+        // 4. Automatically route back to HomeScreen
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        return;
       }
     }
   }

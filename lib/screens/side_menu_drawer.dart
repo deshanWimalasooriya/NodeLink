@@ -5,7 +5,7 @@ import '../core/theme/app_theme.dart';
 import '../core/widgets/cyber_button.dart';
 import '../core/widgets/cyber_avatar.dart';
 import '../providers/node_link_provider.dart';
-import 'create_account_screen.dart';
+import 'onboarding_welcome_screen.dart';
 import 'connection_hub_screen.dart';
 import 'settings_screen.dart';
 import 'user_profile_screen.dart';
@@ -188,7 +188,7 @@ class SideMenuDrawer extends StatelessWidget {
                         await provider.logout();
                         if (context.mounted) {
                           Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-                            MaterialPageRoute(builder: (_) => const CreateAccountScreen()),
+                            MaterialPageRoute(builder: (_) => const OnboardingWelcomeScreen()),
                             (route) => false,
                           );
                         }
