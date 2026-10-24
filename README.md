@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/images/logo.png" alt="NodeLink Logo" width="140" />
+  <img src="assets/images/logo.jpg" alt="NodeLink Logo" width="140" />
 
   # NodeLink
 
@@ -47,7 +47,7 @@ Instead of draining battery with constant high-frequency GPS locks, NodeLink use
     <tr>
       <td><img src="assets/images/Home.jpg" width="200" alt="Home Dashboard"/></td>
       <td><img src="assets/images/connection_hub.png" width="200" alt="Connection Hub"/></td>
-      <td><img src="assets/images/rofile.jpg" width="200" alt="User Profile"/></td>
+      <td><img src="assets/images/Profile.jpg" width="200" alt="User Profile"/></td>
       <td><img src="assets/images/settings.png" width="200" alt="Settings"/></td>
     </tr>
   </table>
