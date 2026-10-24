@@ -9,6 +9,7 @@ import '../core/widgets/cyber_app_bar.dart';
 import '../core/widgets/cyber_avatar.dart';
 import '../models/neighbor_group.dart';
 import '../providers/node_link_provider.dart';
+import '../services/firebase_sync_service.dart';
 import 'qr_scanner_screen.dart';
 import 'settings_screen.dart';
 
@@ -47,20 +48,41 @@ class _ConnectionHubScreenState extends State<ConnectionHubScreen> {
       return;
     }
 
-    final success = await provider.linkDevice(text);
-    if (mounted && success) {
-      _nodeIdInputController.clear();
-      final displayId = text.length >= 16
-          ? '${text.substring(0, 8)}...${text.substring(text.length - 4)}'
-          : text;
+    if (text == provider.currentUser.id) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Successfully linked node $displayId'),
-          backgroundColor: AppTheme.neonGreen,
+        const SnackBar(
+          content: Text('Cannot connect to your own Node ID!'),
+          backgroundColor: AppTheme.warningRed,
         ),
       );
-      if (Navigator.of(context).canPop()) {
-        Navigator.of(context).pop();
+      return;
+    }
+
+    final success = await FirebaseSyncService.sendConnectionRequest(
+      targetNodeId: text,
+      myNodeId: provider.currentUser.id,
+      myUsername: provider.currentUser.name,
+    );
+
+    if (mounted) {
+      _nodeIdInputController.clear();
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Connection request sent! Waiting for approval.'),
+            backgroundColor: AppTheme.electricCyan,
+          ),
+        );
+        if (Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to send connection request. Please check the Node ID.'),
+            backgroundColor: AppTheme.warningRed,
+          ),
+        );
       }
     }
   }
@@ -577,41 +599,6 @@ class _ConnectionHubScreenState extends State<ConnectionHubScreen> {
                       ),
                     ),
                   ],
-
-                  const SizedBox(height: 14),
-
-                  // "🔄 Generate New" button
-                  GestureDetector(
-                    onTap: () => provider.generateNewNodeId(),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        color: isLight
-                            ? const Color(0xFFF1F5F9)
-                            : AppTheme.spaceIndigo.withValues(alpha: 0.6),
-                        border: Border.all(
-                          color: AppTheme.electricCyan.withValues(alpha: 0.3),
-                          width: 1.0,
-                        ),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.refresh_rounded, size: 16, color: AppTheme.electricCyan),
-                          SizedBox(width: 6),
-                          Text(
-                            'Generate New',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: AppTheme.electricCyan,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),

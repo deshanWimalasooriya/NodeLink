@@ -8,9 +8,27 @@ import '../models/node_user.dart';
 import '../models/neighbor_group.dart';
 
 class FirebaseSyncService {
-  // Configurable Firebase Realtime Database URL (Spark Free Tier)
-  static String? firebaseDatabaseUrl =
+  // Constant default Firebase Realtime Database URL (Spark Free Tier)
+  static const String defaultDatabaseUrl =
       'https://nodelink-5232f-default-rtdb.asia-southeast1.firebasedatabase.app';
+
+  static String? _configuredDatabaseUrl = defaultDatabaseUrl;
+
+  /// Configurable Firebase Realtime Database URL with automatic fallback to defaultDatabaseUrl
+  static String? get firebaseDatabaseUrl {
+    if (_configuredDatabaseUrl != null && _configuredDatabaseUrl!.trim().isNotEmpty) {
+      return _configuredDatabaseUrl!.trim();
+    }
+    return defaultDatabaseUrl;
+  }
+
+  static set firebaseDatabaseUrl(String? url) {
+    if (url != null && url.trim().isNotEmpty) {
+      _configuredDatabaseUrl = url.trim();
+    } else {
+      _configuredDatabaseUrl = defaultDatabaseUrl;
+    }
+  }
 
   /// Generates a cryptographically secure 16-character alphanumeric Node ID
   static String generateSecureNodeId() {
@@ -147,9 +165,16 @@ class FirebaseSyncService {
   }
 
   /// Instantiate newly registered user record inside Firebase Realtime Database
-  /// Writes simultaneously to:
-  /// - `/users/<nodeId>`
-  /// - `/usernames/<username>`
+  /// Calls the REST equivalent of .set() to instantiate root user node:
+  /// `users/<nodeId>` = {
+  ///   "name": username,
+  ///   "phoneNumber": phoneNumber,
+  ///   "nodeId": nodeId,
+  ///   "status": "online",
+  ///   "is_moving": false,
+  ///   "profilePicUrl": profileImageUrl ?? "",
+  ///   "active_connections": {}
+  /// }
   static Future<bool> instantiateUserRecord({
     required String nodeId,
     required String name,
@@ -164,15 +189,16 @@ class FirebaseSyncService {
 
     final Map<String, dynamic> record = {
       'name': name,
-      'username': name,
       'phoneNumber': phoneNumber,
-      'phone': phoneNumber,
       'nodeId': secureNodeId,
-      'id': secureNodeId,
       'status': 'online',
       'is_moving': false,
       'profilePicUrl': profilePicUrl,
-      'profile_pic_url': profilePicUrl,
+      'active_connections': <String, dynamic>{},
+      // Schema compatibility helpers
+      'username': name,
+      'phone': phoneNumber,
+      'id': secureNodeId,
       'battery': batteryLevel,
       'avatar': profilePicUrl.isNotEmpty ? profilePicUrl : 'assets/avatars/nuwan.jpg',
       'location': {
@@ -182,47 +208,47 @@ class FirebaseSyncService {
       },
     };
 
-    if (firebaseDatabaseUrl != null && firebaseDatabaseUrl!.isNotEmpty) {
-      try {
-        final cleanUrl = cleanDatabaseUrl(firebaseDatabaseUrl!);
-        final key = sanitizeKey(secureNodeId);
+    final activeUrl = (firebaseDatabaseUrl != null && firebaseDatabaseUrl!.trim().isNotEmpty)
+        ? firebaseDatabaseUrl!
+        : defaultDatabaseUrl;
+    final cleanUrl = cleanDatabaseUrl(activeUrl);
+    final key = sanitizeKey(secureNodeId);
 
-        final futures = <Future<http.Response>>[];
-
-        // 1. Put to sanitized key: /users/<key>.json
-        futures.add(http.put(
-          Uri.parse('$cleanUrl/users/$key.json'),
+    // Call REST PUT (.set()) directly on users/$secureNodeId.json
+    final uri = Uri.parse('$cleanUrl/users/$secureNodeId.json');
+    final response = await http
+        .put(
+          uri,
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode(record),
-        ));
+        )
+        .timeout(const Duration(seconds: 8));
 
-        // 2. Also put directly to raw secureNodeId: /users/<secureNodeId>.json
-        if (secureNodeId != key) {
-          futures.add(http.put(
-            Uri.parse('$cleanUrl/users/$secureNodeId.json'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode(record),
-          ));
-        }
-
-        // 3. Fast-lookup username index: /usernames/<username>: true
-        final cleanUsername = sanitizeUsername(name);
-        if (cleanUsername.isNotEmpty) {
-          futures.add(http.put(
-            Uri.parse('$cleanUrl/usernames/$cleanUsername.json'),
-            headers: {'Content-Type': 'application/json'},
-            body: jsonEncode(true),
-          ));
-        }
-
-        await Future.wait(futures).timeout(const Duration(seconds: 6));
-        debugPrint('Firebase instantiated user record & username index for nodeId: $secureNodeId ($name)');
-        return true;
-      } catch (e) {
-        debugPrint('Error instantiating user record in Firebase: $e');
-      }
+    if (response.statusCode != 200) {
+      throw Exception('Firebase Realtime Database error: HTTP ${response.statusCode} - ${response.body}');
     }
-    return false;
+
+    // Also sync to sanitized key if distinct for backwards compatibility
+    if (key != secureNodeId) {
+      await http.put(
+        Uri.parse('$cleanUrl/users/$key.json'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(record),
+      ).timeout(const Duration(seconds: 5));
+    }
+
+    // Also write to fast-lookup username index: /usernames/<username>.json = true
+    final cleanUsername = sanitizeUsername(name);
+    if (cleanUsername.isNotEmpty) {
+      await http.put(
+        Uri.parse('$cleanUrl/usernames/$cleanUsername.json'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(true),
+      ).timeout(const Duration(seconds: 5));
+    }
+
+    debugPrint('Firebase successfully instantiated root user node for nodeId: $secureNodeId ($name)');
+    return true;
   }
 
   /// Save or update a neighbor group for the current node
@@ -556,6 +582,167 @@ class FirebaseSyncService {
       debugPrint('Error fetching active connections: $e');
     }
     return connections;
+  }
+
+  /// Handshake Phase 1: Write connection request to target node's pending_requests
+  /// Path: `users/<target_node_id>/pending_requests/<my_node_id>`
+  static Future<bool> sendConnectionRequest({
+    required String targetNodeId,
+    required String myNodeId,
+    required String myUsername,
+  }) async {
+    if (firebaseDatabaseUrl == null || firebaseDatabaseUrl!.isEmpty) return false;
+    try {
+      final cleanUrl = cleanDatabaseUrl(firebaseDatabaseUrl!);
+      final cleanTargetId = targetNodeId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+      final cleanMyId = myNodeId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+
+      final payload = {
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'requester_name': myUsername,
+        'requester_id': cleanMyId,
+      };
+
+      final response = await http
+          .put(
+            Uri.parse('$cleanUrl/users/$cleanTargetId/pending_requests/$cleanMyId.json'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 8));
+
+      // Also put to target key if distinct
+      final targetKey = sanitizeKey(cleanTargetId);
+      if (targetKey != cleanTargetId) {
+        await http.put(
+          Uri.parse('$cleanUrl/users/$targetKey/pending_requests/$cleanMyId.json'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(payload),
+        ).timeout(const Duration(seconds: 4));
+      }
+
+      debugPrint('Connection request sent to $cleanTargetId from $cleanMyId');
+      return response.statusCode == 200;
+    } catch (e) {
+      debugPrint('Error sending connection request: $e');
+      return false;
+    }
+  }
+
+  /// Handshake Phase 2: Stream listening to incoming connection requests
+  /// Path: `users/<my_node_id>/pending_requests.json`
+  static Stream<Map<String, dynamic>> streamPendingRequests(String myNodeId) async* {
+    if (firebaseDatabaseUrl == null || firebaseDatabaseUrl!.isEmpty) return;
+    final cleanUrl = cleanDatabaseUrl(firebaseDatabaseUrl!);
+    final cleanId = myNodeId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+    final key = sanitizeKey(cleanId);
+    if (cleanId.isEmpty) return;
+
+    while (true) {
+      try {
+        http.Response res = await http
+            .get(Uri.parse('$cleanUrl/users/$cleanId/pending_requests.json'))
+            .timeout(const Duration(seconds: 4));
+
+        if ((res.statusCode != 200 || res.body == 'null') && key != cleanId) {
+          res = await http
+              .get(Uri.parse('$cleanUrl/users/$key/pending_requests.json'))
+              .timeout(const Duration(seconds: 4));
+        }
+
+        if (res.statusCode == 200 && res.body != 'null') {
+          final data = jsonDecode(res.body);
+          if (data is Map<String, dynamic>) {
+            yield data;
+          } else {
+            yield {};
+          }
+        } else {
+          yield {};
+        }
+      } catch (_) {
+        yield {};
+      }
+      await Future.delayed(const Duration(seconds: 2));
+    }
+  }
+
+  /// Handshake Phase 3: Accept connection request
+  /// Simultaneous update:
+  /// - `users/<myNodeId>/active_connections/<requesterNodeId>` = true
+  /// - `users/<requesterNodeId>/active_connections/<myNodeId>` = true
+  /// - `users/<myNodeId>/pending_requests/<requesterNodeId>` = null (delete)
+  static Future<bool> acceptConnectionRequest({
+    required String myNodeId,
+    required String requesterNodeId,
+  }) async {
+    if (firebaseDatabaseUrl == null || firebaseDatabaseUrl!.isEmpty) return false;
+    try {
+      final cleanUrl = cleanDatabaseUrl(firebaseDatabaseUrl!);
+      final cleanMyId = myNodeId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+      final cleanRequesterId = requesterNodeId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+
+      // Multi-path root update
+      final updates = {
+        'users/$cleanMyId/active_connections/$cleanRequesterId': true,
+        'users/$cleanRequesterId/active_connections/$cleanMyId': true,
+        'users/$cleanMyId/pending_requests/$cleanRequesterId': null,
+      };
+
+      final response = await http
+          .patch(
+            Uri.parse('$cleanUrl/.json'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(updates),
+          )
+          .timeout(const Duration(seconds: 8));
+
+      // Direct individual writes if root patch returned non-200
+      if (response.statusCode != 200) {
+        await Future.wait([
+          http.put(
+            Uri.parse('$cleanUrl/users/$cleanMyId/active_connections/$cleanRequesterId.json'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(true),
+          ),
+          http.put(
+            Uri.parse('$cleanUrl/users/$cleanRequesterId/active_connections/$cleanMyId.json'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(true),
+          ),
+          http.delete(
+            Uri.parse('$cleanUrl/users/$cleanMyId/pending_requests/$cleanRequesterId.json'),
+          ),
+        ]).timeout(const Duration(seconds: 6));
+      }
+
+      debugPrint('Connection handshake accepted: $cleanMyId <-> $cleanRequesterId');
+      return true;
+    } catch (e) {
+      debugPrint('Error accepting connection request: $e');
+      return false;
+    }
+  }
+
+  /// Handshake Phase 3: Decline connection request (delete from pending_requests)
+  static Future<bool> declineConnectionRequest({
+    required String myNodeId,
+    required String requesterNodeId,
+  }) async {
+    if (firebaseDatabaseUrl == null || firebaseDatabaseUrl!.isEmpty) return false;
+    try {
+      final cleanUrl = cleanDatabaseUrl(firebaseDatabaseUrl!);
+      final cleanMyId = myNodeId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+      final cleanRequesterId = requesterNodeId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+
+      final res = await http.delete(
+        Uri.parse('$cleanUrl/users/$cleanMyId/pending_requests/$cleanRequesterId.json'),
+      );
+      return res.statusCode == 200;
+    } catch (e) {
+      debugPrint('Error declining connection request: $e');
+      return false;
+    }
   }
 
   /// Multi-Stream Neighbor Tracking:

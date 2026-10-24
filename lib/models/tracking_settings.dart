@@ -12,6 +12,9 @@ class TrackingSettings {
   final bool alwaysShareLocation;
   final String firebaseDbUrl;
 
+  static const String defaultDbUrl =
+      'https://nodelink-5232f-default-rtdb.asia-southeast1.firebasedatabase.app';
+
   const TrackingSettings({
     this.activeIntervalSec = 60, // 1 Min default for ACTIVE
     this.sleepIntervalSec = 600, // 10 Mins default for STILL
@@ -24,7 +27,7 @@ class TrackingSettings {
     this.visibleToConnectionOnly = true,
     this.biometricLock = false,
     this.alwaysShareLocation = true,
-    this.firebaseDbUrl = '',
+    this.firebaseDbUrl = defaultDbUrl,
   });
 
   TrackingSettings copyWith({
@@ -72,18 +75,23 @@ class TrackingSettings {
     'firebaseDbUrl': firebaseDbUrl,
   };
 
-  factory TrackingSettings.fromJson(Map<String, dynamic> json) => TrackingSettings(
-    activeIntervalSec: json['activeIntervalSec'] as int? ?? 60,
-    sleepIntervalSec: json['sleepIntervalSec'] as int? ?? 600,
-    lowBatterySaver: json['lowBatterySaver'] as bool? ?? true,
-    nodeLinkRequestAlerts: json['nodeLinkRequestAlerts'] as bool? ?? true,
-    liveUpdatesAlerts: json['liveUpdatesAlerts'] as bool? ?? true,
-    serviceRunningNotification: json['serviceRunningNotification'] as bool? ?? true,
-    mapDisplayStyle: json['mapDisplayStyle'] as String? ?? 'Cyber-Dark Mode',
-    profilePicsOnPins: json['profilePicsOnPins'] as bool? ?? true,
-    visibleToConnectionOnly: json['visibleToConnectionOnly'] as bool? ?? true,
-    biometricLock: json['biometricLock'] as bool? ?? false,
-    alwaysShareLocation: json['alwaysShareLocation'] as bool? ?? true,
-    firebaseDbUrl: json['firebaseDbUrl'] as String? ?? '',
-  );
+  factory TrackingSettings.fromJson(Map<String, dynamic> json) {
+    final rawDbUrl = json['firebaseDbUrl'] as String?;
+    return TrackingSettings(
+      activeIntervalSec: json['activeIntervalSec'] as int? ?? 60,
+      sleepIntervalSec: json['sleepIntervalSec'] as int? ?? 600,
+      lowBatterySaver: json['lowBatterySaver'] as bool? ?? true,
+      nodeLinkRequestAlerts: json['nodeLinkRequestAlerts'] as bool? ?? true,
+      liveUpdatesAlerts: json['liveUpdatesAlerts'] as bool? ?? true,
+      serviceRunningNotification: json['serviceRunningNotification'] as bool? ?? true,
+      mapDisplayStyle: json['mapDisplayStyle'] as String? ?? 'Cyber-Dark Mode',
+      profilePicsOnPins: json['profilePicsOnPins'] as bool? ?? true,
+      visibleToConnectionOnly: json['visibleToConnectionOnly'] as bool? ?? true,
+      biometricLock: json['biometricLock'] as bool? ?? false,
+      alwaysShareLocation: json['alwaysShareLocation'] as bool? ?? true,
+      firebaseDbUrl: (rawDbUrl != null && rawDbUrl.trim().isNotEmpty)
+          ? rawDbUrl.trim()
+          : defaultDbUrl,
+    );
+  }
 }

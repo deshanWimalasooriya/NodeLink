@@ -380,7 +380,9 @@ class NodeLinkProvider extends ChangeNotifier {
         final map = jsonDecode(savedStr) as Map<String, dynamic>;
         _settings = TrackingSettings.fromJson(map);
       }
-      FirebaseSyncService.firebaseDatabaseUrl = _settings.firebaseDbUrl;
+      final dbUrl = _settings.firebaseDbUrl.trim();
+      FirebaseSyncService.firebaseDatabaseUrl =
+          dbUrl.isNotEmpty ? dbUrl : FirebaseSyncService.defaultDatabaseUrl;
     } catch (e) {
       debugPrint('Error loading settings: $e');
     }
@@ -540,7 +542,9 @@ class NodeLinkProvider extends ChangeNotifier {
   /// Update full settings
   Future<void> updateSettings(TrackingSettings newSettings) async {
     _settings = newSettings;
-    FirebaseSyncService.firebaseDatabaseUrl = _settings.firebaseDbUrl;
+    final dbUrl = _settings.firebaseDbUrl.trim();
+    FirebaseSyncService.firebaseDatabaseUrl =
+        dbUrl.isNotEmpty ? dbUrl : FirebaseSyncService.defaultDatabaseUrl;
     await _saveSettings();
 
     _adaptiveService.start(
@@ -622,21 +626,6 @@ class NodeLinkProvider extends ChangeNotifier {
   void disconnectDevice(String nodeId) {
     _connectedNodes.removeWhere((node) => node.id == nodeId);
     notifyListeners();
-  }
-
-  /// Generate a new 6-digit Node ID for the user and persist to Firebase
-  Future<void> generateNewNodeId() async {
-    final random = Random();
-    final part1 = 100 + random.nextInt(900);
-    final part2 = 100 + random.nextInt(900);
-    final newId = '$part1 - $part2';
-
-    _currentUser = _currentUser.copyWith(id: newId);
-    notifyListeners();
-
-    if (_hasAccount) {
-      await FirebaseSyncService.syncNodeLocation(node: _currentUser);
-    }
   }
 
   /// Mock simulation methods for verification

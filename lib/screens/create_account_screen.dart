@@ -29,12 +29,6 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
     return FirebaseSyncService.generateSecureNodeId();
   }
 
-  void _regenerateId() {
-    setState(() {
-      _generatedNodeId = _generateRandomNodeId();
-    });
-  }
-
   Future<void> _handleCreateAccount() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) {
@@ -309,11 +303,10 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
                                     ),
                                   ],
                                 ),
-                                IconButton(
-                                  onPressed: _regenerateId,
-                                  icon: const Icon(Icons.refresh_rounded),
+                                const Icon(
+                                  Icons.lock_rounded,
                                   color: AppTheme.electricCyan,
-                                  tooltip: 'Generate new ID',
+                                  size: 18,
                                 ),
                               ],
                             ),

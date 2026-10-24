@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/widgets/cyber_app_bar.dart';
 import '../providers/node_link_provider.dart';
+import '../services/firebase_sync_service.dart';
 
 class QrScannerScreen extends StatefulWidget {
   const QrScannerScreen({super.key});
@@ -84,50 +85,53 @@ class _QrScannerScreenState extends State<QrScannerScreen>
 
         if (!mounted) return;
         final provider = context.read<NodeLinkProvider>();
+        final myNodeId = provider.currentUser.id;
+        final myUsername = provider.currentUser.name;
 
-        // 2. Two-Way Simultaneous Database Write:
-        // users/<user_a_id>/active_connections/<user_b_id> = true
-        // users/<user_b_id>/active_connections/<user_a_id> = true
-        await provider.linkDevice(targetNodeId);
+        // Prevent scanning own node
+        if (targetNodeId == myNodeId) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Cannot link your own Node ID!'),
+              backgroundColor: AppTheme.warningRed,
+            ),
+          );
+          setState(() => _isProcessing = false);
+          await _scannerController.start();
+          return;
+        }
+
+        // 2. Handshake Phase 1: Write connection request to target's pending_requests node
+        final requestSent = await FirebaseSyncService.sendConnectionRequest(
+          targetNodeId: targetNodeId,
+          myNodeId: myNodeId,
+          myUsername: myUsername,
+        );
 
         if (!mounted) return;
 
-        // 3. Display success SnackBar
-        final displayId = targetNodeId.length >= 16
-            ? '${targetNodeId.substring(0, 8)}...${targetNodeId.substring(targetNodeId.length - 4)}'
-            : (targetNodeId.length == 6
-                ? '${targetNodeId.substring(0, 3)} - ${targetNodeId.substring(3, 6)}'
-                : targetNodeId);
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(Icons.check_circle_rounded, color: AppTheme.neonGreen),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Node $displayId successfully paired!',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
+        // 3. UI Feedback: Connection request sent! Waiting for approval.
+        if (requestSent) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Connection request sent! Waiting for approval.'),
+              backgroundColor: AppTheme.electricCyan,
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 4),
             ),
-            backgroundColor: AppTheme.surfaceDark,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: const BorderSide(color: AppTheme.neonGreen, width: 1.5),
+          );
+          // Pop the scanner screen
+          Navigator.of(context).pop();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to send connection request. Please try again.'),
+              backgroundColor: AppTheme.warningRed,
             ),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-
-        // 4. Automatically route back to HomeScreen
-        Navigator.of(context).popUntil((route) => route.isFirst);
+          );
+          setState(() => _isProcessing = false);
+          await _scannerController.start();
+        }
         return;
       }
     }

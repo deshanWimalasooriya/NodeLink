@@ -39,6 +39,11 @@ class _HomeScreenState extends State<HomeScreen> {
   final Map<String, StreamSubscription<NodeUser?>> _neighborSubscriptions = {};
   final Map<String, NodeUser> _liveNeighbors = {};
 
+  // Handshake Phase 2: Pending Requests Stream
+  StreamSubscription<Map<String, dynamic>>? _pendingRequestsSubscription;
+  final Set<String> _promptedRequestIds = {};
+  bool _isRequestDialogShowing = false;
+
   // State variables
   NodeUser? _selectedNode;
   String? _selectedGroupId; // Null represents 'All'
@@ -49,6 +54,270 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _checkPermissionsAndFetchLocation();
+    _initPendingRequestsListener();
+  }
+
+  /// Handshake Phase 2: Global listener for users/{myNodeId}/pending_requests
+  void _initPendingRequestsListener() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final provider = context.read<NodeLinkProvider>();
+      final myNodeId = provider.currentUser.id;
+      if (myNodeId.isEmpty || myNodeId == '000 - 000') return;
+
+      _pendingRequestsSubscription?.cancel();
+      _pendingRequestsSubscription =
+          FirebaseSyncService.streamPendingRequests(myNodeId).listen((requestsMap) {
+        if (!mounted || requestsMap.isEmpty) return;
+
+        // Check for any unprompted incoming requests
+        for (final entry in requestsMap.entries) {
+          final requesterId = entry.key;
+          if (_promptedRequestIds.contains(requesterId)) continue;
+
+          final data = entry.value;
+          final requesterName = (data is Map && data['requester_name'] != null)
+              ? data['requester_name'].toString()
+              : 'Neighbor Node';
+
+          _promptedRequestIds.add(requesterId);
+          _showIncomingRequestDialog(requesterId, requesterName);
+          break; // Show one at a time
+        }
+      });
+    });
+  }
+
+  /// Handshake Phase 2: Popup UI Dialog (Cyber-dark frosted glass)
+  void _showIncomingRequestDialog(String requesterNodeId, String requesterName) {
+    if (_isRequestDialogShowing || !mounted) return;
+    _isRequestDialogShowing = true;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return PopScope(
+          canPop: false,
+          child: Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(26),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+                  decoration: BoxDecoration(
+                    color: AppTheme.deepNavy.withValues(alpha: 0.94),
+                    borderRadius: BorderRadius.circular(26),
+                    border: Border.all(
+                      color: AppTheme.electricCyan.withValues(alpha: 0.6),
+                      width: 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.electricCyan.withValues(alpha: 0.28),
+                        blurRadius: 24,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Glowing Radar Icon
+                      Container(
+                        width: 58,
+                        height: 58,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppTheme.electricCyan.withValues(alpha: 0.15),
+                          border: Border.all(color: AppTheme.electricCyan, width: 2.0),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppTheme.electricCyan.withValues(alpha: 0.4),
+                              blurRadius: 14,
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.wifi_tethering_rounded,
+                          color: AppTheme.electricCyan,
+                          size: 30,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+
+                      // Bold Header
+                      const Text(
+                        'New Connection Request',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Body Text: [requester_name] wants to track your location
+                      RichText(
+                        textAlign: TextAlign.center,
+                        text: TextSpan(
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: AppTheme.textSecondary,
+                            height: 1.45,
+                          ),
+                          children: [
+                            TextSpan(
+                              text: requesterName,
+                              style: const TextStyle(
+                                color: AppTheme.electricCyan,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const TextSpan(
+                              text: ' wants to track your location.\nAccepting will share mutual live GPS coordinates.',
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Two buttons side-by-side: DECLINE (red outlined) and ACCEPT (solid electric-cyan)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () async {
+                                Navigator.of(ctx).pop();
+                                _isRequestDialogShowing = false;
+                                await _handleDeclineRequest(requesterNodeId);
+                              },
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                side: const BorderSide(
+                                  color: AppTheme.warningRed,
+                                  width: 1.6,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(22),
+                                ),
+                              ),
+                              child: const Text(
+                                'DECLINE',
+                                style: TextStyle(
+                                  color: AppTheme.warningRed,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 14,
+                                  letterSpacing: 0.6,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                Navigator.of(ctx).pop();
+                                _isRequestDialogShowing = false;
+                                await _handleAcceptRequest(requesterNodeId, requesterName);
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppTheme.electricCyan,
+                                foregroundColor: AppTheme.deepNavy,
+                                elevation: 8,
+                                shadowColor: AppTheme.electricCyan.withValues(alpha: 0.5),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(22),
+                                ),
+                              ),
+                              child: const Text(
+                                'ACCEPT',
+                                style: TextStyle(
+                                  color: AppTheme.deepNavy,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 14,
+                                  letterSpacing: 0.6,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    ).then((_) {
+      _isRequestDialogShowing = false;
+    });
+  }
+
+  /// Handshake Phase 3: Decline Request
+  Future<void> _handleDeclineRequest(String requesterNodeId) async {
+    final provider = context.read<NodeLinkProvider>();
+    await FirebaseSyncService.declineConnectionRequest(
+      myNodeId: provider.currentUser.id,
+      requesterNodeId: requesterNodeId,
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Connection request declined.'),
+          backgroundColor: AppTheme.surfaceDark,
+        ),
+      );
+    }
+  }
+
+  /// Handshake Phase 3: Accept Request, update active_connections & center map
+  Future<void> _handleAcceptRequest(String requesterNodeId, String requesterName) async {
+    final provider = context.read<NodeLinkProvider>();
+    final myNodeId = provider.currentUser.id;
+
+    // Simultaneous database write & clear request
+    await FirebaseSyncService.acceptConnectionRequest(
+      myNodeId: myNodeId,
+      requesterNodeId: requesterNodeId,
+    );
+
+    // Refresh active connections immediately
+    await provider.fetchRemoteNodes();
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Connected with $requesterName!'),
+        backgroundColor: AppTheme.neonGreen,
+      ),
+    );
+
+    // Center map to encompass both user and newly linked neighbor
+    final newNeighbor = await FirebaseSyncService.fetchNode(requesterNodeId);
+    if (newNeighbor != null && mounted) {
+      final currentUser = provider.currentUser;
+      final bounds = osm_map.LatLngBounds(
+        osm.LatLng(currentUser.latitude, currentUser.longitude),
+        osm.LatLng(newNeighbor.latitude, newNeighbor.longitude),
+      );
+      _mapController.fitCamera(
+        osm_map.CameraFit.bounds(
+          bounds: bounds,
+          padding: const EdgeInsets.all(75.0),
+          maxZoom: 16.0,
+        ),
+      );
+    }
   }
 
   /// Multi-Stream Neighbor Tracking:
@@ -64,6 +333,28 @@ class _HomeScreenState extends State<HomeScreen> {
       _neighborSubscriptions[id]?.cancel();
       _neighborSubscriptions.remove(id);
       _liveNeighbors.remove(id);
+    }
+
+    // Detect if a new neighbor has joined to auto-center camera (e.g. Device B after Device A accepts)
+    final hasNewNeighbor = _liveNeighbors.isNotEmpty &&
+        connectedNodes.any((n) => !_liveNeighbors.containsKey(n.id));
+    if (hasNewNeighbor) {
+      final newlyAdded = connectedNodes.firstWhere((n) => !_liveNeighbors.containsKey(n.id));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final currentUser = context.read<NodeLinkProvider>().currentUser;
+        final bounds = osm_map.LatLngBounds(
+          osm.LatLng(currentUser.latitude, currentUser.longitude),
+          osm.LatLng(newlyAdded.latitude, newlyAdded.longitude),
+        );
+        _mapController.fitCamera(
+          osm_map.CameraFit.bounds(
+            bounds: bounds,
+            padding: const EdgeInsets.all(75.0),
+            maxZoom: 16.0,
+          ),
+        );
+      });
     }
 
     // 2. Add streams for new neighbors
@@ -454,6 +745,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _pendingRequestsSubscription?.cancel();
     for (final sub in _neighborSubscriptions.values) {
       sub.cancel();
     }

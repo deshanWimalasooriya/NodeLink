@@ -220,18 +220,40 @@ class _RegistrationSetupScreenState extends State<RegistrationSetupScreen> {
           );
           if (uploadedUrl != null && uploadedUrl.isNotEmpty) {
             profilePicUrl = uploadedUrl;
-            // CRITICAL FIX: Explicitly write download URL string back to user's Realtime Database node
-            await FirebaseSyncService.updateProfilePhotoUrl(
-              nodeId: nodeId,
-              photoUrl: profilePicUrl,
-            );
           }
         } catch (e) {
           debugPrint('Photo upload deferred: $e');
         }
       }
 
-      // 2. Save credentials to local SharedPreferences
+      // 2. CRITICAL DATABASE WRITE: Instantiate root user node
+      // Must call .set() on users/$nodeId and verify 100% success before continuing
+      try {
+        final writeSuccess = await FirebaseSyncService.instantiateUserRecord(
+          nodeId: nodeId,
+          name: username,
+          phoneNumber: fullPhoneNumber,
+          profilePicUrl: profilePicUrl,
+        );
+
+        if (!writeSuccess) {
+          throw Exception('Database write returned false.');
+        }
+      } catch (dbError) {
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Database account creation failed: $dbError'),
+              backgroundColor: AppTheme.warningRed,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+        return; // CRITICAL: Do NOT navigate to HomeScreen!
+      }
+
+      // 3. Save credentials to local SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('username', username);
       await prefs.setString('phoneNumber', fullPhoneNumber);
@@ -245,15 +267,6 @@ class _RegistrationSetupScreenState extends State<RegistrationSetupScreen> {
       if (_pickedImagePath != null) {
         await prefs.setString('localPhotoPath', _pickedImagePath!);
       }
-
-      // 3. Instantiate user record inside Firebase Realtime Database
-      // Permanent 6-digit Node ID storage: users/<node_id>/nodeId: "123456"
-      await FirebaseSyncService.instantiateUserRecord(
-        nodeId: nodeId,
-        name: username,
-        phoneNumber: fullPhoneNumber,
-        profilePicUrl: profilePicUrl,
-      );
 
       // 4. Initialize Provider state & update local state
       if (!mounted) return;
