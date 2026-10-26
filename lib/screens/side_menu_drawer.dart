@@ -19,6 +19,8 @@ class SideMenuDrawer extends StatelessWidget {
   Widget build(BuildContext context) {
     final provider = context.watch<NodeLinkProvider>();
     final user = provider.currentUser;
+    final theme = Theme.of(context);
+    final isLight = theme.brightness == Brightness.light;
 
     final width = MediaQuery.of(context).size.width * 0.78;
 
@@ -35,18 +37,24 @@ class SideMenuDrawer extends StatelessWidget {
           filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
             decoration: BoxDecoration(
-              color: AppTheme.deepNavy.withValues(alpha: 0.88),
+              color: isLight
+                  ? theme.colorScheme.surface.withValues(alpha: 0.96)
+                  : AppTheme.deepNavy.withValues(alpha: 0.88),
               borderRadius: const BorderRadius.only(
                 topRight: Radius.circular(30),
                 bottomRight: Radius.circular(30),
               ),
               border: Border.all(
-                color: AppTheme.electricCyan.withValues(alpha: 0.22),
+                color: isLight
+                    ? AppTheme.lightBorder
+                    : AppTheme.electricCyan.withValues(alpha: 0.22),
                 width: 1.2,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.5),
+                  color: isLight
+                      ? const Color(0xFF0F172A).withValues(alpha: 0.08)
+                      : Colors.black.withValues(alpha: 0.5),
                   blurRadius: 24,
                   spreadRadius: 4,
                 ),
@@ -83,10 +91,11 @@ class SideMenuDrawer extends StatelessWidget {
                               children: [
                                 Text(
                                   user.name.split(' ').first,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 22,
                                     fontWeight: FontWeight.w800,
-                                    color: Colors.white,
+                                    color: theme.textTheme.bodyLarge?.color ??
+                                        (isLight ? AppTheme.lightTextPrimary : Colors.white),
                                   ),
                                 ),
                                 const SizedBox(height: 6),
@@ -94,15 +103,19 @@ class SideMenuDrawer extends StatelessWidget {
                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: AppTheme.neonGreen, width: 1.0),
-                                    color: AppTheme.neonGreen.withValues(alpha: 0.12),
+                                    border: Border.all(
+                                      color: isLight ? AppTheme.cyberTeal : AppTheme.neonGreen,
+                                      width: 1.0,
+                                    ),
+                                    color: (isLight ? AppTheme.cyberTeal : AppTheme.neonGreen)
+                                        .withValues(alpha: 0.12),
                                   ),
                                   child: Text(
                                     'Node ID: ${user.id}',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w800,
-                                      color: AppTheme.neonGreen,
+                                      color: isLight ? const Color(0xFF0D9488) : AppTheme.neonGreen,
                                     ),
                                   ),
                                 ),
@@ -195,12 +208,12 @@ class SideMenuDrawer extends StatelessWidget {
                       },
                     ),
                     const SizedBox(height: 14),
-                    const Center(
+                    Center(
                       child: Text(
                         'NodeLink v1.0.2',
                         style: TextStyle(
                           fontSize: 12,
-                          color: AppTheme.textMuted,
+                          color: isLight ? AppTheme.lightTextMuted : AppTheme.textMuted,
                           letterSpacing: 0.5,
                         ),
                       ),
@@ -223,14 +236,25 @@ class SideMenuDrawer extends StatelessWidget {
     required bool isActive,
     required VoidCallback onTap,
   }) {
+    final theme = Theme.of(context);
+    final isLight = theme.brightness == Brightness.light;
+    final primaryColor = theme.colorScheme.primary;
+
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         color: isActive
-            ? AppTheme.spaceIndigo.withValues(alpha: 0.7)
+            ? (isLight
+                ? primaryColor.withValues(alpha: 0.12)
+                : AppTheme.spaceIndigo.withValues(alpha: 0.7))
             : Colors.transparent,
         border: isActive
-            ? Border.all(color: AppTheme.electricCyan.withValues(alpha: 0.4), width: 1.0)
+            ? Border.all(
+                color: isLight
+                    ? primaryColor.withValues(alpha: 0.35)
+                    : AppTheme.electricCyan.withValues(alpha: 0.4),
+                width: 1.0,
+              )
             : null,
       ),
       child: ListTile(
@@ -238,7 +262,11 @@ class SideMenuDrawer extends StatelessWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         leading: Icon(
           icon,
-          color: isActive ? AppTheme.electricCyan : AppTheme.electricCyan.withValues(alpha: 0.75),
+          color: isActive
+              ? (isLight ? const Color(0xFF0284C7) : AppTheme.electricCyan)
+              : (isLight
+                  ? const Color(0xFF64748B) // Readable medium-grey in light mode
+                  : AppTheme.electricCyan.withValues(alpha: 0.75)),
           size: 24,
         ),
         title: Text(
@@ -246,12 +274,14 @@ class SideMenuDrawer extends StatelessWidget {
           style: TextStyle(
             fontSize: 16,
             fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
-            color: isActive ? Colors.white : AppTheme.textPrimary,
+            color: isActive
+                ? (isLight ? const Color(0xFF0F172A) : Colors.white)
+                : (isLight ? const Color(0xFF334155) : AppTheme.textPrimary),
           ),
         ),
-        trailing: const Icon(
+        trailing: Icon(
           Icons.chevron_right_rounded,
-          color: AppTheme.textMuted,
+          color: isLight ? const Color(0xFF94A3B8) : AppTheme.textMuted,
           size: 20,
         ),
       ),

@@ -3,6 +3,9 @@ allprojects {
         google()
         mavenCentral()
     }
+    tasks.withType<JavaCompile>().configureEach {
+        options.compilerArgs.add("-Xlint:-options")
+    }
 }
 
 val newBuildDir: Directory =
@@ -22,3 +25,5 @@ subprojects {
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
+
+

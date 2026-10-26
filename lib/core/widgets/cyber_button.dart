@@ -32,6 +32,10 @@ class CyberButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isLight = theme.brightness == Brightness.light;
+    final primaryAccent = theme.colorScheme.primary;
+
     Color bgColor;
     Color textColor;
     Color borderColor;
@@ -39,27 +43,37 @@ class CyberButton extends StatelessWidget {
 
     switch (variant) {
       case CyberButtonVariant.primary:
-        bgColor = AppTheme.electricCyan;
+        bgColor = primaryAccent;
         textColor = AppTheme.deepNavy;
         borderColor = Colors.transparent;
-        shadows = AppTheme.cyanGlow(blur: 16, opacity: 0.45);
+        shadows = isLight
+            ? AppTheme.lightCardShadow
+            : AppTheme.cyanGlow(blur: 16, opacity: 0.45);
         break;
       case CyberButtonVariant.neon:
         bgColor = AppTheme.neonGreen;
         textColor = AppTheme.deepNavy;
         borderColor = Colors.transparent;
-        shadows = AppTheme.neonGlow(blur: 16, opacity: 0.45);
+        shadows = isLight
+            ? AppTheme.lightCardShadow
+            : AppTheme.neonGlow(blur: 16, opacity: 0.45);
         break;
       case CyberButtonVariant.outline:
-        bgColor = AppTheme.spaceIndigo.withValues(alpha: 0.35);
-        textColor = AppTheme.electricCyan;
-        borderColor = AppTheme.electricCyan.withValues(alpha: 0.5);
+        bgColor = isLight
+            ? primaryAccent.withValues(alpha: 0.08)
+            : AppTheme.spaceIndigo.withValues(alpha: 0.35);
+        textColor = isLight ? const Color(0xFF0284C7) : AppTheme.electricCyan;
+        borderColor = isLight
+            ? const Color(0xFF0284C7).withValues(alpha: 0.4)
+            : AppTheme.electricCyan.withValues(alpha: 0.5);
         shadows = [];
         break;
       case CyberButtonVariant.dangerOutline:
-        bgColor = AppTheme.warningRed.withValues(alpha: 0.12);
+        bgColor = isLight
+            ? AppTheme.warningRed.withValues(alpha: 0.08)
+            : AppTheme.warningRed.withValues(alpha: 0.12);
         textColor = AppTheme.warningRed;
-        borderColor = AppTheme.warningRed.withValues(alpha: 0.5);
+        borderColor = AppTheme.warningRed.withValues(alpha: isLight ? 0.35 : 0.5);
         shadows = [];
         break;
     }

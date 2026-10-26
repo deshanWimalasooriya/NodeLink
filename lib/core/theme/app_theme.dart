@@ -72,6 +72,7 @@ class AppTheme {
       primaryColor: electricCyan,
       canvasColor: deepNavy,
       cardColor: spaceIndigo,
+      dividerColor: spaceIndigo,
       fontFamily: 'Roboto',
       colorScheme: const ColorScheme.dark(
         primary: electricCyan,
@@ -81,6 +82,12 @@ class AppTheme {
         onPrimary: deepNavy,
         onSecondary: deepNavy,
         onSurface: textPrimary,
+      ),
+      textTheme: const TextTheme(
+        bodyLarge: TextStyle(color: textPrimary),
+        bodyMedium: TextStyle(color: textSecondary),
+        bodySmall: TextStyle(color: textMuted),
+        titleLarge: TextStyle(color: textPrimary),
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,
@@ -135,6 +142,7 @@ class AppTheme {
       primaryColor: electricCyan,
       canvasColor: lightBg,
       cardColor: lightSurface,
+      dividerColor: lightBorder,
       fontFamily: 'Roboto',
       colorScheme: const ColorScheme.light(
         primary: electricCyan,
@@ -144,6 +152,12 @@ class AppTheme {
         onPrimary: deepNavy,
         onSecondary: deepNavy,
         onSurface: lightTextPrimary,
+      ),
+      textTheme: const TextTheme(
+        bodyLarge: TextStyle(color: lightTextPrimary),
+        bodyMedium: TextStyle(color: lightTextSecondary),
+        bodySmall: TextStyle(color: lightTextMuted),
+        titleLarge: TextStyle(color: lightTextPrimary),
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: Colors.transparent,

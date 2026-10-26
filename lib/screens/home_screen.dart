@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'package:latlong2/latlong.dart' as osm;
 import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
 import '../core/widgets/cyber_app_bar.dart';
+import '../core/widgets/location_pin_marker.dart';
 import '../core/widgets/map_theme_dialog.dart';
 import '../models/node_user.dart';
 import '../models/neighbor_group.dart';
@@ -49,6 +51,8 @@ class _HomeScreenState extends State<HomeScreen> {
   String? _selectedGroupId; // Null represents 'All'
   bool _isPermissionDenied = false;
   bool _isLoadingLocation = false;
+  bool isNorthLocked = true;
+  double _currentRotation = 0.0;
 
   @override
   void initState() {
@@ -523,85 +527,18 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Custom Circular Avatar Marker with glowing border and dynamic name label
+  /// Location Pin Teardrop Marker with circular avatar window & name label
   Widget _buildUserAvatarMarker(
     NodeUser user, {
     required bool isSelf,
     bool isSelected = false,
     bool isLight = false,
   }) {
-    final borderColor = isSelf
-        ? const Color(0xFF00F0FF)
-        : (isSelected
-            ? AppTheme.neonGreen
-            : (user.status.toLowerCase() == 'online'
-                ? AppTheme.neonGreen
-                : const Color(0xFF00F0FF)));
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        // Name / Status Badge at top of marker
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: isLight
-                ? (isSelf ? const Color(0xFF38BDF8) : Colors.white.withValues(alpha: 0.95))
-                : AppTheme.deepNavy.withValues(alpha: 0.92),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: isLight && !isSelf ? const Color(0xFFCBD5E1) : borderColor,
-              width: isSelected ? 1.8 : 1.0,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: isSelected
-                    ? const Color(0xFF00F0FF).withValues(alpha: 0.6)
-                    : Colors.black.withValues(alpha: isLight ? 0.15 : 0.4),
-                blurRadius: isSelected ? 8 : 4,
-              ),
-            ],
-          ),
-          child: Text(
-            isSelf ? 'You' : user.name.split(' ').first,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-              color: isLight
-                  ? (isSelf ? Colors.white : const Color(0xFF0F172A))
-                  : (isSelf || isSelected ? const Color(0xFF00F0FF) : Colors.white),
-              letterSpacing: 0.4,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        const SizedBox(height: 3),
-
-        // Circular Container with glowing Neon Green or Electric-Cyan border
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isLight ? Colors.white : AppTheme.deepNavy,
-            border: Border.all(
-              color: borderColor,
-              width: isSelected ? 3.0 : 2.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: borderColor.withValues(alpha: isSelected ? 0.7 : 0.5),
-                blurRadius: isSelected ? 16 : 12,
-                spreadRadius: isSelected ? 2 : 1,
-              ),
-            ],
-          ),
-          child: ClipOval(
-            child: _buildAvatarImage(user, iconSize: 26, fallbackColor: borderColor),
-          ),
-        ),
-      ],
+    return LocationPinMarker(
+      user: user,
+      isSelf: isSelf,
+      isSelected: isSelected,
+      isLight: isLight,
     );
   }
 
@@ -613,13 +550,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }) {
     final List<osm_map.Marker> markers = [];
 
-    // 1. Local User Node Marker
+    // 1. Local User Node Marker (Tip anchored to exact GPS location)
     markers.add(
       osm_map.Marker(
         point: osm.LatLng(currentUser.latitude, currentUser.longitude),
         width: 60,
-        height: 74,
-        alignment: Alignment.topCenter,
+        height: 86,
+        alignment: Alignment.bottomCenter,
         child: _buildUserAvatarMarker(currentUser, isSelf: true, isLight: isLight),
       ),
     );
@@ -631,8 +568,8 @@ class _HomeScreenState extends State<HomeScreen> {
         osm_map.Marker(
           point: osm.LatLng(node.latitude, node.longitude),
           width: 60,
-          height: 74,
-          alignment: Alignment.topCenter,
+          height: 86,
+          alignment: Alignment.bottomCenter,
           child: GestureDetector(
             onTap: () {
               setState(() => _selectedNode = node);
@@ -833,11 +770,24 @@ class _HomeScreenState extends State<HomeScreen> {
                 // 1. FlutterMap with Dynamic Map Theming
                 osm_map.FlutterMap(
                   mapController: _mapController,
-                  options: const osm_map.MapOptions(
+                  options: osm_map.MapOptions(
                     initialCenter: _fallbackLocation, // Static fallback LatLng(7.6166, 80.2000)
                     initialZoom: 14.5,
                     minZoom: 3.0,
                     maxZoom: 18.0,
+                    onPositionChanged: (camera, hasGesture) {
+                      final rot = camera.rotation;
+                      if (hasGesture && rot != 0.0 && isNorthLocked) {
+                        setState(() {
+                          isNorthLocked = false;
+                          _currentRotation = rot;
+                        });
+                      } else if (_currentRotation != rot) {
+                        setState(() {
+                          _currentRotation = rot;
+                        });
+                      }
+                    },
                   ),
                   children: [
                     // Dynamic Tile Layer (Carto Light, Dark Matter, Satellite, Street)
@@ -921,7 +871,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
 
-                // 4. Map Compass Control (Reset Bearing to North)
+                // 4. Map Compass Control (Dynamic North-Lock & Conditional Glow)
                 Positioned(
                   top: MediaQuery.of(context).padding.top + 70,
                   right: 18,
@@ -937,16 +887,22 @@ class _HomeScreenState extends State<HomeScreen> {
                               ? Colors.white.withValues(alpha: 0.9)
                               : AppTheme.deepNavy.withValues(alpha: 0.8),
                           border: Border.all(
-                            color: const Color(0xFF00F0FF),
+                            color: isNorthLocked
+                                ? const Color(0xFF00F0FF)
+                                : (isLight
+                                    ? const Color(0xFFCBD5E1)
+                                    : AppTheme.spaceIndigo),
                             width: 1.5,
                           ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF00F0FF).withValues(alpha: 0.4),
-                              blurRadius: 12,
-                              spreadRadius: 1,
-                            ),
-                          ],
+                          boxShadow: isNorthLocked
+                              ? [
+                                  BoxShadow(
+                                    color: const Color(0xFF00F0FF).withValues(alpha: 0.6),
+                                    blurRadius: 10,
+                                    spreadRadius: 2,
+                                  ),
+                                ]
+                              : null,
                         ),
                         child: Material(
                           color: Colors.transparent,
@@ -954,12 +910,23 @@ class _HomeScreenState extends State<HomeScreen> {
                             customBorder: const CircleBorder(),
                             onTap: () {
                               _mapController.rotate(0.0);
+                              setState(() {
+                                isNorthLocked = true;
+                                _currentRotation = 0.0;
+                              });
                             },
-                            child: const Center(
-                              child: Icon(
-                                Icons.explore,
-                                color: Color(0xFF00F0FF),
-                                size: 24,
+                            child: Center(
+                              child: Transform.rotate(
+                                angle: -(_currentRotation * (math.pi / 180.0)),
+                                child: Icon(
+                                  Icons.explore,
+                                  color: isNorthLocked
+                                      ? const Color(0xFF00F0FF)
+                                      : (isLight
+                                          ? const Color(0xFF64748B)
+                                          : AppTheme.textSecondary),
+                                  size: 24,
+                                ),
                               ),
                             ),
                           ),

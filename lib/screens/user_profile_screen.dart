@@ -36,6 +36,10 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
   Future<void> _pickAndUploadProfilePicture() async {
     final picker = ImagePicker();
+    final theme = Theme.of(context);
+    final isLight = theme.brightness == Brightness.light;
+    final textColor = theme.textTheme.bodyLarge?.color ??
+        (isLight ? AppTheme.lightTextPrimary : Colors.white);
 
     final ImageSource? source = await showModalBottomSheet<ImageSource>(
       context: context,
@@ -43,9 +47,13 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       builder: (ctx) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
         decoration: BoxDecoration(
-          color: AppTheme.surfaceDark,
+          color: isLight ? theme.colorScheme.surface : AppTheme.surfaceDark,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
-          border: Border.all(color: AppTheme.electricCyan.withValues(alpha: 0.3)),
+          border: Border.all(
+            color: isLight
+                ? AppTheme.lightBorder
+                : AppTheme.electricCyan.withValues(alpha: 0.3),
+          ),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -54,28 +62,40 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: AppTheme.textMuted,
+                color: isLight ? AppTheme.lightTextMuted : AppTheme.textMuted,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
             const SizedBox(height: 18),
-            const Text(
+            Text(
               'Select Profile Picture',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
-                color: Colors.white,
+                color: textColor,
               ),
             ),
             const SizedBox(height: 16),
             ListTile(
-              leading: const Icon(Icons.camera_alt_rounded, color: AppTheme.electricCyan),
-              title: const Text('Take Photo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+              leading: Icon(
+                Icons.camera_alt_rounded,
+                color: isLight ? const Color(0xFF0284C7) : AppTheme.electricCyan,
+              ),
+              title: Text(
+                'Take Photo',
+                style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
+              ),
               onTap: () => Navigator.of(ctx).pop(ImageSource.camera),
             ),
             ListTile(
-              leading: const Icon(Icons.photo_library_rounded, color: AppTheme.neonGreen),
-              title: const Text('Choose from Gallery', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+              leading: Icon(
+                Icons.photo_library_rounded,
+                color: isLight ? const Color(0xFF059669) : AppTheme.neonGreen,
+              ),
+              title: Text(
+                'Choose from Gallery',
+                style: TextStyle(color: textColor, fontWeight: FontWeight.w600),
+              ),
               onTap: () => Navigator.of(ctx).pop(ImageSource.gallery),
             ),
           ],
@@ -152,21 +172,28 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
     final provider = context.watch<NodeLinkProvider>();
     final user = provider.currentUser;
     final settings = provider.settings;
+    final theme = Theme.of(context);
+    final isLight = theme.brightness == Brightness.light;
+    final textColor = theme.textTheme.bodyLarge?.color ??
+        (isLight ? AppTheme.lightTextPrimary : Colors.white);
+    final secondaryTextColor =
+        isLight ? AppTheme.lightTextSecondary : AppTheme.textSecondary;
+    final accentColor = isLight ? const Color(0xFF0284C7) : AppTheme.electricCyan;
 
     return Scaffold(
-      backgroundColor: AppTheme.deepNavy,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: CyberAppBar(
         titleText: 'NodeLink',
         actions: [
           CyberCircleIconButton(
             icon: Icons.edit_outlined,
             iconSize: 20,
-            iconColor: AppTheme.textSecondary,
+            iconColor: isLight ? const Color(0xFF0284C7) : AppTheme.textSecondary,
             onTap: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Profile edit mode enabled'),
-                  backgroundColor: AppTheme.electricCyan,
+                SnackBar(
+                  content: const Text('Profile edit mode enabled'),
+                  backgroundColor: accentColor,
                 ),
               );
             },
@@ -200,21 +227,36 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
                       decoration: BoxDecoration(
-                        color: AppTheme.deepNavy,
+                        color: isLight ? Colors.white : AppTheme.deepNavy,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppTheme.neonGreen, width: 1.0),
+                        border: Border.all(
+                          color: isLight ? const Color(0xFF059669) : AppTheme.neonGreen,
+                          width: 1.0,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: isLight
+                                ? const Color(0xFF0F172A).withValues(alpha: 0.08)
+                                : Colors.black.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                          ),
+                        ],
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.circle, size: 8, color: AppTheme.neonGreen),
-                          SizedBox(width: 5),
+                          Icon(
+                            Icons.circle,
+                            size: 8,
+                            color: isLight ? const Color(0xFF059669) : AppTheme.neonGreen,
+                          ),
+                          const SizedBox(width: 5),
                           Text(
                             'Online',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
-                              color: Colors.white,
+                              color: isLight ? const Color(0xFF059669) : Colors.white,
                             ),
                           ),
                         ],
@@ -233,25 +275,27 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                         height: 36,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: AppTheme.surfaceDark,
+                          color: isLight ? Colors.white : AppTheme.surfaceDark,
                           border: Border.all(
-                            color: AppTheme.electricCyan,
+                            color: accentColor,
                             width: 2.0,
                           ),
-                          boxShadow: AppTheme.cyanGlow(blur: 10, opacity: 0.6),
+                          boxShadow: isLight
+                              ? AppTheme.lightCardShadow
+                              : AppTheme.cyanGlow(blur: 10, opacity: 0.6),
                         ),
                         child: _isUploadingPhoto
-                            ? const Padding(
-                                padding: EdgeInsets.all(8.0),
+                            ? Padding(
+                                padding: const EdgeInsets.all(8.0),
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2.0,
-                                  color: AppTheme.electricCyan,
+                                  color: accentColor,
                                 ),
                               )
-                            : const Icon(
+                            : Icon(
                                 Icons.camera_alt_rounded,
                                 size: 18,
-                                color: AppTheme.electricCyan,
+                                color: accentColor,
                               ),
                       ),
                     ),
@@ -265,18 +309,18 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             // Name and Email
             Text(
               user.name.split(' ').first,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 26,
                 fontWeight: FontWeight.w800,
-                color: Colors.white,
+                color: textColor,
               ),
             ),
             const SizedBox(height: 4),
             Text(
               user.email,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
-                color: AppTheme.textSecondary,
+                color: secondaryTextColor,
               ),
             ),
 
@@ -296,16 +340,18 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                         decoration: BoxDecoration(
-                          color: AppTheme.neonGreen,
+                          color: isLight ? const Color(0xFF059669) : AppTheme.neonGreen,
                           borderRadius: BorderRadius.circular(12),
-                          boxShadow: AppTheme.neonGlow(blur: 10, opacity: 0.3),
+                          boxShadow: isLight
+                              ? AppTheme.lightCardShadow
+                              : AppTheme.neonGlow(blur: 10, opacity: 0.3),
                         ),
                         child: Text(
                           'Node ID: ${user.id}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w900,
-                            color: AppTheme.deepNavy,
+                            color: isLight ? Colors.white : AppTheme.deepNavy,
                           ),
                         ),
                       ),
@@ -313,7 +359,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                         decoration: BoxDecoration(
-                          color: AppTheme.electricCyan.withValues(alpha: 0.8),
+                          color: isLight
+                              ? const Color(0xFF0284C7)
+                              : AppTheme.electricCyan.withValues(alpha: 0.8),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
@@ -321,7 +369,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                           style: const TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w700,
-                            color: AppTheme.deepNavy,
+                            color: Colors.white,
                           ),
                         ),
                       ),
@@ -332,19 +380,21 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   Row(
                     children: [
                       _buildQuickAction(
+                        context: context,
                         icon: Icons.copy_rounded,
                         label: 'Copy Link',
                         onTap: () {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Node Link copied to clipboard'),
-                              backgroundColor: AppTheme.electricCyan,
+                            SnackBar(
+                              content: const Text('Node Link copied to clipboard'),
+                              backgroundColor: accentColor,
                             ),
                           );
                         },
                       ),
                       const SizedBox(width: 14),
                       _buildQuickAction(
+                        context: context,
                         icon: Icons.qr_code_2_rounded,
                         label: 'Share QR',
                         onTap: () {
@@ -366,16 +416,19 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
             // Editable Input Tiles
             _buildFrostedField(
+              context: context,
               label: 'Full Name',
               controller: _nameController,
             ),
             const SizedBox(height: 12),
             _buildFrostedField(
+              context: context,
               label: 'Phone Number',
               controller: _phoneController,
             ),
             const SizedBox(height: 12),
             _buildFrostedField(
+              context: context,
               label: 'Current Location',
               controller: _locationController,
               trailingIcon: Icons.location_on_rounded,
@@ -392,29 +445,29 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                 children: [
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
+                    children: [
                       Text(
                         'Sharing Status',
                         style: TextStyle(
                           fontSize: 12,
-                          color: AppTheme.textSecondary,
+                          color: secondaryTextColor,
                         ),
                       ),
-                      SizedBox(height: 3),
+                      const SizedBox(height: 3),
                       Text(
                         'Always Share Location',
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
-                          color: Colors.white,
+                          color: textColor,
                         ),
                       ),
-                      SizedBox(height: 2),
+                      const SizedBox(height: 2),
                       Text(
                         'Only during movement',
                         style: TextStyle(
                           fontSize: 11,
-                          color: AppTheme.textMuted,
+                          color: isLight ? AppTheme.lightTextMuted : AppTheme.textMuted,
                         ),
                       ),
                     ],
@@ -429,7 +482,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
 
             const SizedBox(height: 22),
 
-            // Vibrant Electric Cyan UPDATE PROFILE button
+            // Vibrant Action button
             CyberButton(
               text: 'UPDATE PROFILE',
               onPressed: () {
@@ -501,22 +554,28 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   }
 
   Widget _buildQuickAction({
+    required BuildContext context,
     required IconData icon,
     required String label,
     required VoidCallback onTap,
   }) {
+    final isLight = Theme.of(context).brightness == Brightness.light;
+    final iconColor = isLight ? const Color(0xFF0F172A) : Colors.white;
+    final secondaryTextColor =
+        isLight ? AppTheme.lightTextSecondary : AppTheme.textSecondary;
+
     return GestureDetector(
       onTap: onTap,
       child: Column(
         children: [
-          Icon(icon, color: Colors.white, size: 24),
+          Icon(icon, color: iconColor, size: 24),
           const SizedBox(height: 4),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: AppTheme.textSecondary,
+              color: secondaryTextColor,
             ),
           ),
         ],
@@ -525,10 +584,18 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   }
 
   Widget _buildFrostedField({
+    required BuildContext context,
     required String label,
     required TextEditingController controller,
     IconData? trailingIcon,
   }) {
+    final theme = Theme.of(context);
+    final isLight = theme.brightness == Brightness.light;
+    final textColor = theme.textTheme.bodyLarge?.color ??
+        (isLight ? AppTheme.lightTextPrimary : Colors.white);
+    final secondaryTextColor =
+        isLight ? AppTheme.lightTextSecondary : AppTheme.textSecondary;
+
     return CyberCard(
       borderRadius: 18,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
@@ -540,18 +607,18 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               children: [
                 Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
-                    color: AppTheme.textSecondary,
+                    color: secondaryTextColor,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
                 TextField(
                   controller: controller,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                    color: textColor,
                   ),
                   decoration: const InputDecoration(
                     isDense: true,
@@ -563,7 +630,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             ),
           ),
           if (trailingIcon != null)
-            Icon(trailingIcon, color: AppTheme.textSecondary, size: 20),
+            Icon(trailingIcon, color: secondaryTextColor, size: 20),
         ],
       ),
     );

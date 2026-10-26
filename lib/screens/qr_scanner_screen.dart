@@ -1,4 +1,6 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 import '../core/theme/app_theme.dart';
@@ -20,6 +22,7 @@ class _QrScannerScreenState extends State<QrScannerScreen>
   late Animation<double> _laserAnimation;
 
   bool _isProcessing = false;
+  bool _isTorchOn = false;
 
   @override
   void initState() {
@@ -45,6 +48,36 @@ class _QrScannerScreenState extends State<QrScannerScreen>
     _animController.dispose();
     _scannerController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickImageFromGallery() async {
+    if (_isProcessing) return;
+    try {
+      final picker = ImagePicker();
+      final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+      if (image == null) return;
+
+      final barcodeCapture = await _scannerController.analyzeImage(image.path);
+      if (barcodeCapture != null && barcodeCapture.barcodes.isNotEmpty) {
+        await _handleBarcodeDetected(barcodeCapture);
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No Node ID QR code found in selected image.'),
+            backgroundColor: AppTheme.warningRed,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to read image: $e'),
+          backgroundColor: AppTheme.warningRed,
+        ),
+      );
+    }
   }
 
   Future<void> _handleBarcodeDetected(BarcodeCapture capture) async {
@@ -141,9 +174,12 @@ class _QrScannerScreenState extends State<QrScannerScreen>
   Widget build(BuildContext context) {
     const double scanBoxSize = 270.0;
     const double cornerRadius = 24.0;
+    final theme = Theme.of(context);
+    final isLight = theme.brightness == Brightness.light;
+    final primaryAccent = theme.colorScheme.primary;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: theme.scaffoldBackgroundColor,
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -163,7 +199,11 @@ class _QrScannerScreenState extends State<QrScannerScreen>
                       Text(
                         'Camera access error: ${error.errorCode}',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.white, fontSize: 14),
+                        style: TextStyle(
+                          color: theme.textTheme.bodyMedium?.color ??
+                              (isLight ? AppTheme.lightTextPrimary : Colors.white),
+                          fontSize: 14,
+                        ),
                       ),
                     ],
                   ),
@@ -172,12 +212,19 @@ class _QrScannerScreenState extends State<QrScannerScreen>
             },
           ),
 
-          // 2. Custom Cyber Overlay with dark semi-transparent backdrop and clear cutout
-          CustomPaint(
-            size: Size.infinite,
-            painter: _ScannerHolePainter(
+          // 2. Dynamic Frosted Glass Overlay with clear scanning cutout
+          ClipPath(
+            clipper: _ScannerHoleClipper(
               boxSize: scanBoxSize,
               borderRadius: cornerRadius,
+            ),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Container(
+                color: isLight
+                    ? Colors.white.withValues(alpha: 0.70)
+                    : const Color(0xB8070D1F),
+              ),
             ),
           ),
 
@@ -195,18 +242,22 @@ class _QrScannerScreenState extends State<QrScannerScreen>
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(cornerRadius),
                       border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.22),
+                        color: isLight
+                            ? primaryAccent.withValues(alpha: 0.35)
+                            : Colors.white.withValues(alpha: 0.22),
                         width: 1.5,
                       ),
-                      color: Colors.white.withValues(alpha: 0.03),
+                      color: isLight
+                          ? Colors.white.withValues(alpha: 0.05)
+                          : Colors.white.withValues(alpha: 0.03),
                     ),
                   ),
 
-                  // Glowing electric-cyan corner brackets
+                  // Glowing corner brackets
                   CustomPaint(
                     size: const Size(scanBoxSize, scanBoxSize),
                     painter: _CyberCornerPainter(
-                      color: AppTheme.electricCyan,
+                      color: isLight ? const Color(0xFF0284C7) : AppTheme.electricCyan,
                       strokeWidth: 4.0,
                       cornerLength: 38.0,
                       radius: cornerRadius,
@@ -238,7 +289,7 @@ class _QrScannerScreenState extends State<QrScannerScreen>
                                     spreadRadius: 2,
                                   ),
                                   BoxShadow(
-                                    color: AppTheme.electricCyan.withValues(alpha: 0.5),
+                                    color: primaryAccent.withValues(alpha: 0.5),
                                     blurRadius: 18,
                                     spreadRadius: 3,
                                   ),
@@ -269,7 +320,75 @@ class _QrScannerScreenState extends State<QrScannerScreen>
             ),
           ),
 
-          // 4. Circular Cyber Back Button matching QR Scan .jpg
+          // 4. "Scan a Node ID" Instruction Text
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 54,
+            left: 20,
+            right: 20,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Scan a Node ID',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: theme.textTheme.bodyLarge?.color ??
+                        (isLight ? AppTheme.lightTextPrimary : Colors.white),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Align QR code within the frame to link',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.75) ??
+                        (isLight ? AppTheme.lightTextSecondary : AppTheme.textSecondary),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // 5. Flashlight and Gallery Toggle Buttons
+          Positioned(
+            bottom: 44,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildScannerToggle(
+                  context,
+                  icon: _isTorchOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
+                  label: 'Flashlight',
+                  isActive: _isTorchOn,
+                  isLight: isLight,
+                  onTap: () async {
+                    await _scannerController.toggleTorch();
+                    setState(() {
+                      _isTorchOn = !_isTorchOn;
+                    });
+                  },
+                ),
+                const SizedBox(width: 36),
+                _buildScannerToggle(
+                  context,
+                  icon: Icons.photo_library_outlined,
+                  label: 'Gallery',
+                  isActive: false,
+                  isLight: isLight,
+                  onTap: _pickImageFromGallery,
+                ),
+              ],
+            ),
+          ),
+
+          // 6. Circular Cyber Back Button
           Positioned(
             top: 0,
             left: 0,
@@ -279,30 +398,29 @@ class _QrScannerScreenState extends State<QrScannerScreen>
                 child: CyberCircleIconButton(
                   icon: Icons.chevron_left_rounded,
                   iconSize: 28,
-                  iconColor: Colors.white,
                   onTap: () => Navigator.of(context).pop(),
                 ),
               ),
             ),
           ),
 
-          // 5. Loading overlay when processing code
+          // 7. Loading overlay when processing code
           if (_isProcessing)
             Container(
               color: Colors.black.withValues(alpha: 0.6),
-              child: const Center(
+              child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     CircularProgressIndicator(
-                      color: AppTheme.electricCyan,
+                      color: primaryAccent,
                       strokeWidth: 3,
                     ),
-                    SizedBox(height: 16),
+                    const SizedBox(height: 16),
                     Text(
                       'Linking Node to Network...',
                       style: TextStyle(
-                        color: AppTheme.electricCyan,
+                        color: primaryAccent,
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 1.0,
@@ -316,22 +434,93 @@ class _QrScannerScreenState extends State<QrScannerScreen>
       ),
     );
   }
+
+  Widget _buildScannerToggle(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    required bool isActive,
+    required bool isLight,
+    required VoidCallback onTap,
+  }) {
+    final theme = Theme.of(context);
+    final textColor = theme.textTheme.bodyLarge?.color ??
+        (isLight ? AppTheme.lightTextPrimary : Colors.white);
+    final activeColor = theme.colorScheme.primary;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ClipOval(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isActive
+                      ? activeColor.withValues(alpha: 0.25)
+                      : (isLight
+                          ? Colors.white.withValues(alpha: 0.85)
+                          : AppTheme.surfaceDark.withValues(alpha: 0.7)),
+                  border: Border.all(
+                    color: isActive
+                        ? activeColor
+                        : (isLight
+                            ? AppTheme.lightBorder
+                            : AppTheme.electricCyan.withValues(alpha: 0.3)),
+                    width: 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: isLight
+                          ? const Color(0xFF0F172A).withValues(alpha: 0.08)
+                          : Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 10,
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Icon(
+                    icon,
+                    size: 24,
+                    color: isActive ? activeColor : textColor,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: textColor,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-/// Custom painter to cut out the scanning square hole with a dark semi-transparent backdrop
-class _ScannerHolePainter extends CustomPainter {
+/// Custom clipper to cut out the scanning square hole leaving the camera view clear
+class _ScannerHoleClipper extends CustomClipper<Path> {
   final double boxSize;
   final double borderRadius;
 
-  _ScannerHolePainter({
+  _ScannerHoleClipper({
     required this.boxSize,
     required this.borderRadius,
   });
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final bgPaint = Paint()..color = const Color(0xB8070D1F);
-
+  Path getClip(Size size) {
     final screenRect = Rect.fromLTWH(0, 0, size.width, size.height);
     final center = Offset(size.width / 2, size.height / 2);
 
@@ -343,13 +532,12 @@ class _ScannerHolePainter extends CustomPainter {
     final screenPath = Path()..addRect(screenRect);
     final holePath = Path()..addRRect(cutRect);
 
-    final combinedPath = Path.combine(PathOperation.difference, screenPath, holePath);
-    canvas.drawPath(combinedPath, bgPaint);
+    return Path.combine(PathOperation.difference, screenPath, holePath);
   }
 
   @override
-  bool shouldRepaint(covariant _ScannerHolePainter oldDelegate) =>
-      oldDelegate.boxSize != boxSize || oldDelegate.borderRadius != borderRadius;
+  bool shouldReclip(covariant _ScannerHoleClipper oldClipper) =>
+      oldClipper.boxSize != boxSize || oldClipper.borderRadius != borderRadius;
 }
 
 /// Custom painter for glowing electric-cyan corners matching QR Scan .jpg

@@ -2,7 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../../models/node_user.dart';
-import 'radar_pulse_indicator.dart';
+import 'location_pin_marker.dart';
 
 class CyberMapView extends StatefulWidget {
   final NodeUser currentUser;
@@ -148,100 +148,11 @@ class _CyberMapViewState extends State<CyberMapView> with SingleTickerProviderSt
   Widget _buildNodeMarker({required NodeUser node, required bool isSelf}) {
     return GestureDetector(
       onTap: () => widget.onNodeSelected?.call(node),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Floating Name Pill Badge above marker
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppTheme.deepNavy.withValues(alpha: 0.85),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: isSelf
-                    ? AppTheme.electricCyan
-                    : (node.name == 'Alex' || node.status == 'Online'
-                        ? AppTheme.neonGreen
-                        : AppTheme.electricCyan),
-                width: 1.2,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: (isSelf ? AppTheme.electricCyan : AppTheme.neonGreen)
-                      .withValues(alpha: 0.3),
-                  blurRadius: 8,
-                ),
-              ],
-            ),
-            child: Text(
-              isSelf ? 'You' : node.name,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.5,
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-
-          // Radar Concentric Pulsing Rings with Micro-Marker Avatar Pin
-          RadarPulseIndicator(
-            size: 92,
-            primaryColor: isSelf ? AppTheme.electricCyan : AppTheme.neonGreen,
-            secondaryColor: isSelf ? AppTheme.cyberBlue : AppTheme.electricCyan,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // Pointer teardrop frame
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: isSelf ? AppTheme.electricCyan : AppTheme.neonGreen,
-                      width: 2.5,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: (isSelf ? AppTheme.electricCyan : AppTheme.neonGreen)
-                            .withValues(alpha: 0.6),
-                        blurRadius: 14,
-                        spreadRadius: 2,
-                      ),
-                    ],
-                  ),
-                  child: ClipOval(
-                    child: isSelf
-                        ? Container(
-                            color: AppTheme.spaceIndigo,
-                            child: const Icon(
-                              Icons.person_rounded,
-                              color: AppTheme.electricCyan,
-                              size: 28,
-                            ),
-                          )
-                        : Image.asset(
-                            node.avatarPath,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Container(
-                                color: AppTheme.spaceIndigo,
-                                child: const Icon(
-                                  Icons.person,
-                                  color: AppTheme.electricCyan,
-                                  size: 24,
-                                ),
-                              );
-                            },
-                          ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+      child: LocationPinMarker(
+        user: node,
+        isSelf: isSelf,
+        isSelected: false,
+        isLight: false,
       ),
     );
   }

@@ -57,12 +57,13 @@ class CyberAvatar extends StatelessWidget {
     );
   }
 
-  Widget _buildPlaceholder() {
+  Widget _buildPlaceholder(BuildContext context) {
+    final isLight = Theme.of(context).brightness == Brightness.light;
     final initial = name.trim().isNotEmpty ? name.trim()[0].toUpperCase() : '';
     return Container(
       width: size,
       height: size,
-      color: AppTheme.spaceIndigo,
+      color: isLight ? const Color(0xFFE2E8F0) : AppTheme.spaceIndigo,
       alignment: Alignment.center,
       child: initial.isNotEmpty
           ? Text(
@@ -70,19 +71,19 @@ class CyberAvatar extends StatelessWidget {
               style: TextStyle(
                 fontSize: size * 0.45,
                 fontWeight: FontWeight.w900,
-                color: AppTheme.electricCyan,
+                color: isLight ? const Color(0xFF0284C7) : AppTheme.electricCyan,
                 letterSpacing: 0.5,
               ),
             )
           : Icon(
               Icons.person_rounded,
               size: size * 0.55,
-              color: AppTheme.electricCyan,
+              color: isLight ? const Color(0xFF0284C7) : AppTheme.electricCyan,
             ),
     );
   }
 
-  Widget _buildImageContent() {
+  Widget _buildImageContent(BuildContext context) {
     // 1. Prioritize profilePicUrl from Firebase Storage / Realtime Database
     if (profilePicUrl != null && profilePicUrl!.trim().isNotEmpty) {
       final cleanUrl = profilePicUrl!.trim();
@@ -93,30 +94,31 @@ class CyberAvatar extends StatelessWidget {
           return Image.memory(
             bytes,
             fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) => _buildPlaceholder(),
+            errorBuilder: (context, error, stackTrace) => _buildPlaceholder(context),
           );
         } catch (_) {
-          return _buildPlaceholder();
+          return _buildPlaceholder(context);
         }
       }
 
+      final isLight = Theme.of(context).brightness == Brightness.light;
       return CachedNetworkImage(
         imageUrl: cleanUrl,
         fit: BoxFit.cover,
         placeholder: (context, url) => Container(
-          color: AppTheme.spaceIndigo,
+          color: isLight ? const Color(0xFFE2E8F0) : AppTheme.spaceIndigo,
           child: Center(
             child: SizedBox(
               width: size * 0.35,
               height: size * 0.35,
-              child: const CircularProgressIndicator(
+              child: CircularProgressIndicator(
                 strokeWidth: 2.0,
-                color: AppTheme.electricCyan,
+                color: isLight ? const Color(0xFF0284C7) : AppTheme.electricCyan,
               ),
             ),
           ),
         ),
-        errorWidget: (context, url, error) => _buildPlaceholder(),
+        errorWidget: (context, url, error) => _buildPlaceholder(context),
       );
     }
 
@@ -127,18 +129,21 @@ class CyberAvatar extends StatelessWidget {
       return Image.asset(
         avatarAsset!,
         fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) => _buildPlaceholder(),
+        errorBuilder: (context, error, stackTrace) => _buildPlaceholder(context),
       );
     }
 
     // 3. Fallback to default placeholder avatar (Initial / User Icon)
-    return _buildPlaceholder();
+    return _buildPlaceholder(context);
   }
 
   @override
   Widget build(BuildContext context) {
+    final isLight = Theme.of(context).brightness == Brightness.light;
     final effectiveBorderColor = borderColor ??
-        (isOnline ? AppTheme.neonGreen : AppTheme.electricCyan);
+        (isOnline
+            ? (isLight ? const Color(0xFF059669) : AppTheme.neonGreen)
+            : (isLight ? const Color(0xFF0284C7) : AppTheme.electricCyan));
 
     Widget avatarCore = Container(
       width: size,
@@ -151,12 +156,16 @@ class CyberAvatar extends StatelessWidget {
         ),
         boxShadow: showGlow
             ? (isOnline
-                ? AppTheme.neonGlow(blur: size * 0.25, opacity: 0.5)
-                : AppTheme.cyanGlow(blur: size * 0.25, opacity: 0.45))
+                ? (isLight
+                    ? AppTheme.lightCardShadow
+                    : AppTheme.neonGlow(blur: size * 0.25, opacity: 0.5))
+                : (isLight
+                    ? AppTheme.lightCardShadow
+                    : AppTheme.cyanGlow(blur: size * 0.25, opacity: 0.45)))
             : null,
       ),
       child: ClipOval(
-        child: _buildImageContent(),
+        child: _buildImageContent(context),
       ),
     );
 
@@ -186,9 +195,11 @@ class CyberAvatar extends StatelessWidget {
               height: size * 0.25,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: isOnline ? AppTheme.neonGreen : AppTheme.electricCyan,
+                color: isOnline
+                    ? (isLight ? const Color(0xFF059669) : AppTheme.neonGreen)
+                    : (isLight ? const Color(0xFF0284C7) : AppTheme.electricCyan),
                 border: Border.all(
-                  color: AppTheme.deepNavy,
+                  color: isLight ? Colors.white : AppTheme.deepNavy,
                   width: size * 0.05,
                 ),
               ),

@@ -14,9 +14,15 @@ class LocationHistoryScreen extends StatelessWidget {
     final provider = context.watch<NodeLinkProvider>();
     final history = provider.locationHistory;
     final timeFormat = DateFormat('hh:mm:ss a');
+    final theme = Theme.of(context);
+    final isLight = theme.brightness == Brightness.light;
+    final textColor = theme.textTheme.bodyLarge?.color ??
+        (isLight ? AppTheme.lightTextPrimary : Colors.white);
+    final secondaryTextColor =
+        isLight ? AppTheme.lightTextSecondary : AppTheme.textSecondary;
 
     return Scaffold(
-      backgroundColor: AppTheme.deepNavy,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: const CyberAppBar(
         titleText: 'Location Logs',
       ),
@@ -25,18 +31,18 @@ class LocationHistoryScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Location History',
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.w800,
-                color: Colors.white,
+                color: textColor,
               ),
             ),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               'Chronological node breadcrumbs with motion tags.',
-              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+              style: TextStyle(color: secondaryTextColor, fontSize: 13),
             ),
             const SizedBox(height: 18),
 
@@ -45,13 +51,20 @@ class LocationHistoryScreen extends StatelessWidget {
                   ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
-                          Icon(Icons.timeline_rounded, size: 48, color: AppTheme.textMuted),
-                          SizedBox(height: 12),
+                        children: [
+                          Icon(
+                            Icons.timeline_rounded,
+                            size: 48,
+                            color: isLight ? AppTheme.lightTextMuted : AppTheme.textMuted,
+                          ),
+                          const SizedBox(height: 12),
                           Text(
                             'No breadcrumb records yet.\nLogs appear after polling cycles.',
                             textAlign: TextAlign.center,
-                            style: TextStyle(color: AppTheme.textMuted, fontSize: 14),
+                            style: TextStyle(
+                              color: isLight ? AppTheme.lightTextMuted : AppTheme.textMuted,
+                              fontSize: 14,
+                            ),
                           ),
                         ],
                       ),
@@ -59,30 +72,44 @@ class LocationHistoryScreen extends StatelessWidget {
                   : ListView.separated(
                       physics: const BouncingScrollPhysics(),
                       itemCount: history.length,
-                      separatorBuilder: (context, index) => const SizedBox(height: 10),
+                      separatorBuilder: (context, index) => Padding(
+                        padding: const EdgeInsets.only(left: 36.0),
+                        child: SizedBox(
+                          height: 14,
+                          child: VerticalDivider(
+                            color: theme.dividerColor,
+                            thickness: 2.0,
+                            width: 2.0,
+                          ),
+                        ),
+                      ),
                       itemBuilder: (context, index) {
                         final item = history[index];
                         final isMoving = item.motionState != 'STILL';
+                        final badgeColor = isMoving
+                            ? (isLight ? const Color(0xFF0284C7) : AppTheme.electricCyan)
+                            : (isLight ? const Color(0xFF059669) : AppTheme.neonGreen);
 
                         return CyberCard(
+                          backgroundColor: theme.cardColor,
                           borderRadius: 18,
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          borderColor: (isMoving ? AppTheme.electricCyan : AppTheme.neonGreen)
-                              .withValues(alpha: 0.25),
+                          borderColor: isLight
+                              ? AppTheme.lightCardBorder
+                              : badgeColor.withValues(alpha: 0.25),
                           child: Row(
                             children: [
                               Container(
                                 padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: (isMoving ? AppTheme.electricCyan : AppTheme.neonGreen)
-                                      .withValues(alpha: 0.15),
+                                  color: badgeColor.withValues(alpha: 0.15),
                                 ),
                                 child: Icon(
                                   isMoving
                                       ? Icons.directions_walk_rounded
                                       : Icons.location_pin,
-                                  color: isMoving ? AppTheme.electricCyan : AppTheme.neonGreen,
+                                  color: badgeColor,
                                   size: 20,
                                 ),
                               ),
@@ -96,10 +123,10 @@ class LocationHistoryScreen extends StatelessWidget {
                                       children: [
                                         Text(
                                           timeFormat.format(item.timestamp),
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 14,
                                             fontWeight: FontWeight.w700,
-                                            color: Colors.white,
+                                            color: textColor,
                                           ),
                                         ),
                                         Container(
@@ -107,13 +134,9 @@ class LocationHistoryScreen extends StatelessWidget {
                                               horizontal: 8, vertical: 3),
                                           decoration: BoxDecoration(
                                             borderRadius: BorderRadius.circular(10),
-                                            color: isMoving
-                                                ? AppTheme.electricCyan.withValues(alpha: 0.15)
-                                                : AppTheme.neonGreen.withValues(alpha: 0.15),
+                                            color: badgeColor.withValues(alpha: 0.12),
                                             border: Border.all(
-                                              color: isMoving
-                                                  ? AppTheme.electricCyan
-                                                  : AppTheme.neonGreen,
+                                              color: badgeColor,
                                               width: 0.8,
                                             ),
                                           ),
@@ -122,9 +145,7 @@ class LocationHistoryScreen extends StatelessWidget {
                                             style: TextStyle(
                                               fontSize: 10,
                                               fontWeight: FontWeight.w800,
-                                              color: isMoving
-                                                  ? AppTheme.electricCyan
-                                                  : AppTheme.neonGreen,
+                                              color: badgeColor,
                                             ),
                                           ),
                                         ),
@@ -133,9 +154,9 @@ class LocationHistoryScreen extends StatelessWidget {
                                     const SizedBox(height: 4),
                                     Text(
                                       '${item.latitude.toStringAsFixed(5)}, ${item.longitude.toStringAsFixed(5)} • Battery: ${item.batteryLevel}%',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 12,
-                                        color: AppTheme.textSecondary,
+                                        color: secondaryTextColor,
                                       ),
                                     ),
                                   ],

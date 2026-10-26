@@ -15,9 +15,16 @@ class BatteryManagementScreen extends StatelessWidget {
     final battery = provider.batteryLevel;
     final motion = provider.motionState.displayName;
     final interval = provider.currentIntervalSec ~/ 60;
+    final theme = Theme.of(context);
+    final isLight = theme.brightness == Brightness.light;
+    final textColor = theme.textTheme.bodyLarge?.color ??
+        (isLight ? AppTheme.lightTextPrimary : Colors.white);
+    final secondaryTextColor =
+        isLight ? AppTheme.lightTextSecondary : AppTheme.textSecondary;
+    final surfaceColor = theme.colorScheme.surface;
 
     return Scaffold(
-      backgroundColor: AppTheme.deepNavy,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: const CyberAppBar(
         titleText: 'Battery Health',
       ),
@@ -26,25 +33,28 @@ class BatteryManagementScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Battery & Energy Efficiency',
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.w800,
-                color: Colors.white,
+                color: textColor,
               ),
             ),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               'Real-time adaptive GPS throttling telemetry.',
-              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+              style: TextStyle(color: secondaryTextColor, fontSize: 13),
             ),
             const SizedBox(height: 20),
 
             // Main Battery Status Card
             CyberCard(
+              backgroundColor: isLight ? surfaceColor : null,
               borderRadius: 24,
-              borderColor: AppTheme.neonGreen.withValues(alpha: 0.35),
+              borderColor: isLight
+                  ? AppTheme.lightCardBorder
+                  : AppTheme.neonGreen.withValues(alpha: 0.35),
               child: Column(
                 children: [
                   Row(
@@ -53,11 +63,11 @@ class BatteryManagementScreen extends StatelessWidget {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
+                          Text(
                             'Current Battery',
                             style: TextStyle(
                               fontSize: 13,
-                              color: AppTheme.textSecondary,
+                              color: secondaryTextColor,
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -66,7 +76,9 @@ class BatteryManagementScreen extends StatelessWidget {
                             style: TextStyle(
                               fontSize: 38,
                               fontWeight: FontWeight.w900,
-                              color: battery < 15 ? AppTheme.warningRed : AppTheme.neonGreen,
+                              color: battery < 15
+                                  ? AppTheme.warningRed
+                                  : (isLight ? const Color(0xFF059669) : AppTheme.neonGreen),
                             ),
                           ),
                         ],
@@ -75,10 +87,14 @@ class BatteryManagementScreen extends StatelessWidget {
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: (battery < 15 ? AppTheme.warningRed : AppTheme.neonGreen)
+                          color: (battery < 15
+                                  ? AppTheme.warningRed
+                                  : (isLight ? const Color(0xFF059669) : AppTheme.neonGreen))
                               .withValues(alpha: 0.15),
                           border: Border.all(
-                            color: battery < 15 ? AppTheme.warningRed : AppTheme.neonGreen,
+                            color: battery < 15
+                                ? AppTheme.warningRed
+                                : (isLight ? const Color(0xFF059669) : AppTheme.neonGreen),
                             width: 1.5,
                           ),
                         ),
@@ -86,7 +102,9 @@ class BatteryManagementScreen extends StatelessWidget {
                           battery < 15
                               ? Icons.battery_alert_rounded
                               : Icons.battery_charging_full_rounded,
-                          color: battery < 15 ? AppTheme.warningRed : AppTheme.neonGreen,
+                          color: battery < 15
+                              ? AppTheme.warningRed
+                              : (isLight ? const Color(0xFF059669) : AppTheme.neonGreen),
                           size: 36,
                         ),
                       ),
@@ -98,9 +116,11 @@ class BatteryManagementScreen extends StatelessWidget {
                     child: LinearProgressIndicator(
                       value: battery / 100.0,
                       minHeight: 10,
-                      backgroundColor: AppTheme.deepNavy,
+                      backgroundColor: isLight ? Colors.grey[300] : AppTheme.deepNavy,
                       valueColor: AlwaysStoppedAnimation<Color>(
-                        battery < 15 ? AppTheme.warningRed : AppTheme.neonGreen,
+                        battery < 15
+                            ? AppTheme.warningRed
+                            : (isLight ? const Color(0xFF059669) : AppTheme.neonGreen),
                       ),
                     ),
                   ),
@@ -112,33 +132,47 @@ class BatteryManagementScreen extends StatelessWidget {
 
             // Adaptive Power Savings Breakdown
             CyberCard(
+              backgroundColor: isLight ? surfaceColor : null,
+              borderColor: isLight ? AppTheme.lightCardBorder : null,
               borderRadius: 22,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Optimization Impact',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
-                      color: Colors.white,
+                      color: textColor,
                     ),
                   ),
                   const SizedBox(height: 14),
-                  _buildMetricRow('Active Polling State', motion, AppTheme.electricCyan),
-                  const Divider(color: AppTheme.spaceIndigo, height: 20),
+                  _buildMetricRow(
+                    'Active Polling State',
+                    motion,
+                    isLight ? const Color(0xFF0284C7) : AppTheme.electricCyan,
+                    secondaryTextColor,
+                  ),
+                  Divider(color: theme.dividerColor, height: 20),
                   _buildMetricRow(
                     'Effective GPS Interval',
                     interval > 0 ? '$interval Minutes' : '${provider.currentIntervalSec} Seconds',
-                    AppTheme.neonGreen,
+                    isLight ? const Color(0xFF059669) : AppTheme.neonGreen,
+                    secondaryTextColor,
                   ),
-                  const Divider(color: AppTheme.spaceIndigo, height: 20),
-                  _buildMetricRow('Estimated Power Saved', '~78.4%', AppTheme.neonGreen),
-                  const Divider(color: AppTheme.spaceIndigo, height: 20),
+                  Divider(color: theme.dividerColor, height: 20),
+                  _buildMetricRow(
+                    'Estimated Power Saved',
+                    '~78.4%',
+                    isLight ? const Color(0xFF059669) : AppTheme.neonGreen,
+                    secondaryTextColor,
+                  ),
+                  Divider(color: theme.dividerColor, height: 20),
                   _buildMetricRow(
                     'Background Keep-Alive',
                     'Active (Foreground Service)',
-                    AppTheme.cyberTeal,
+                    isLight ? const Color(0xFF0D9488) : AppTheme.cyberTeal,
+                    secondaryTextColor,
                   ),
                 ],
               ),
@@ -149,17 +183,24 @@ class BatteryManagementScreen extends StatelessWidget {
             // Explanation Card
             CyberCard(
               borderRadius: 20,
-              backgroundColor: AppTheme.deepNavy.withValues(alpha: 0.5),
+              backgroundColor: isLight
+                  ? surfaceColor
+                  : AppTheme.deepNavy.withValues(alpha: 0.5),
+              borderColor: isLight ? AppTheme.lightCardBorder : null,
               child: Row(
-                children: const [
-                  Icon(Icons.info_outline_rounded, color: AppTheme.electricCyan, size: 24),
-                  SizedBox(width: 14),
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    color: isLight ? const Color(0xFF0284C7) : AppTheme.electricCyan,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 14),
                   Expanded(
                     child: Text(
                       'NodeLink monitors accelerometer variances to switch between 10-minute stationary sleep and 1-minute active travel intervals, maximizing device battery runtime.',
                       style: TextStyle(
                         fontSize: 12,
-                        color: AppTheme.textSecondary,
+                        color: secondaryTextColor,
                         height: 1.4,
                       ),
                     ),
@@ -173,15 +214,20 @@ class BatteryManagementScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildMetricRow(String label, String value, Color valueColor) {
+  Widget _buildMetricRow(
+    String label,
+    String value,
+    Color valueColor,
+    Color labelColor,
+  ) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 13,
-            color: AppTheme.textSecondary,
+            color: labelColor,
           ),
         ),
         Text(
