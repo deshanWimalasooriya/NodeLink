@@ -550,13 +550,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }) {
     final List<osm_map.Marker> markers = [];
 
-    // 1. Local User Node Marker (Tip anchored to exact GPS location)
+    // 1. Local User Node Marker (Center anchored to exact GPS location)
     markers.add(
       osm_map.Marker(
         point: osm.LatLng(currentUser.latitude, currentUser.longitude),
         width: 60,
         height: 86,
-        alignment: Alignment.bottomCenter,
+        alignment: Alignment.center,
         child: _buildUserAvatarMarker(currentUser, isSelf: true, isLight: isLight),
       ),
     );
@@ -569,7 +569,7 @@ class _HomeScreenState extends State<HomeScreen> {
           point: osm.LatLng(node.latitude, node.longitude),
           width: 60,
           height: 86,
-          alignment: Alignment.bottomCenter,
+          alignment: Alignment.center,
           child: GestureDetector(
             onTap: () {
               setState(() => _selectedNode = node);
@@ -775,9 +775,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     initialZoom: 14.5,
                     minZoom: 3.0,
                     maxZoom: 18.0,
+                    interactionOptions: osm_map.InteractionOptions(
+                      // If locked, allow all gestures EXCEPT rotation. If unlocked, allow all.
+                      flags: isNorthLocked
+                          ? osm_map.InteractiveFlag.all & ~osm_map.InteractiveFlag.rotate
+                          : osm_map.InteractiveFlag.all,
+                    ),
                     onPositionChanged: (camera, hasGesture) {
                       final rot = camera.rotation;
-                      if (hasGesture && rot != 0.0 && isNorthLocked) {
+                      final currentRotation = rot.abs();
+
+                      // Only unlock if the user intentionally twists the map beyond a 2-degree threshold
+                      if (hasGesture && isNorthLocked && currentRotation > 2.0) {
                         setState(() {
                           isNorthLocked = false;
                           _currentRotation = rot;
@@ -801,7 +810,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     osm_map.PolylineLayer(polylines: polylines),
 
                     // Rebuilt Live Dynamic Markers
-                    osm_map.MarkerLayer(markers: markers),
+                    osm_map.MarkerLayer(
+                      alignment: Alignment.center,
+                      markers: markers,
+                    ),
                   ],
                 ),
 
@@ -909,11 +921,19 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: InkWell(
                             customBorder: const CircleBorder(),
                             onTap: () {
-                              _mapController.rotate(0.0);
-                              setState(() {
-                                isNorthLocked = true;
-                                _currentRotation = 0.0;
-                              });
+                              if (isNorthLocked) {
+                                // Tapping when locked: unlock North-Lock (remove glow, allow rotation)
+                                setState(() {
+                                  isNorthLocked = false;
+                                });
+                              } else {
+                                // Tapping when unlocked: reset rotation to 0.0, restore glow and lock rotation
+                                _mapController.rotate(0.0);
+                                setState(() {
+                                  isNorthLocked = true;
+                                  _currentRotation = 0.0;
+                                });
+                              }
                             },
                             child: Center(
                               child: Transform.rotate(
