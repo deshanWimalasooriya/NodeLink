@@ -540,6 +540,30 @@ class FirebaseSyncService {
     }
   }
 
+  /// Removes bidirectional link from active_connections
+  static Future<bool> disconnectNodes(String userAId, String userBId) async {
+    if (firebaseDatabaseUrl == null || firebaseDatabaseUrl!.isEmpty) return false;
+    try {
+      final cleanUrl = cleanDatabaseUrl(firebaseDatabaseUrl!);
+      final cleanA = userAId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+      final cleanB = userBId.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '');
+      final keyA = sanitizeKey(cleanA);
+      final keyB = sanitizeKey(cleanB);
+
+      await Future.wait([
+        http.delete(Uri.parse('$cleanUrl/users/$keyA/active_connections/$keyB.json')),
+        http.delete(Uri.parse('$cleanUrl/users/$keyB/active_connections/$keyA.json')),
+        http.delete(Uri.parse('$cleanUrl/users/$cleanA/active_connections/$cleanB.json')),
+        http.delete(Uri.parse('$cleanUrl/users/$cleanB/active_connections/$cleanA.json')),
+      ]).timeout(const Duration(seconds: 6));
+
+      return true;
+    } catch (e) {
+      debugPrint('Error disconnecting nodes in Firebase: $e');
+      return false;
+    }
+  }
+
   /// Fetch list of active connection node IDs for a user
   static Future<List<String>> fetchActiveConnections(String userId) async {
     final List<String> connections = [];

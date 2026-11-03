@@ -20,6 +20,7 @@ import '../services/firebase_sync_service.dart';
 import 'connection_hub_screen.dart';
 import 'settings_screen.dart';
 import 'side_menu_drawer.dart';
+import 'call/call_popup_banner.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -33,6 +34,44 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // OpenStreetMap Controller
   final osm_map.MapController _mapController = osm_map.MapController();
+  bool _isMapReady = false;
+  osm.LatLng? _pendingTargetPosition;
+  double? _pendingTargetZoom;
+  osm_map.CameraFit? _pendingFitCamera;
+
+  void _safeMapMove(osm.LatLng point, double zoom) {
+    if (!_isMapReady) {
+      _pendingTargetPosition = point;
+      _pendingTargetZoom = zoom;
+      return;
+    }
+    try {
+      _mapController.move(point, zoom);
+    } catch (e) {
+      debugPrint('MapController.move skipped (map not ready): $e');
+    }
+  }
+
+  void _safeFitCamera(osm_map.CameraFit fit) {
+    if (!_isMapReady) {
+      _pendingFitCamera = fit;
+      return;
+    }
+    try {
+      _mapController.fitCamera(fit);
+    } catch (e) {
+      debugPrint('MapController.fitCamera skipped (map not ready): $e');
+    }
+  }
+
+  void _safeRotate(double degree) {
+    if (!_isMapReady) return;
+    try {
+      _mapController.rotate(degree);
+    } catch (e) {
+      debugPrint('MapController.rotate skipped (map not ready): $e');
+    }
+  }
 
   // Static fallback location so the map instantly renders without waiting for GPS
   static const osm.LatLng _fallbackLocation = osm.LatLng(7.6166, 80.2000);
@@ -127,11 +166,13 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Glowing Radar Icon
-                      Container(
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Glowing Radar Icon
+                        Container(
                         width: 58,
                         height: 58,
                         decoration: BoxDecoration(
@@ -257,6 +298,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
+              ),
             ),
           ),
         );
@@ -314,7 +356,7 @@ class _HomeScreenState extends State<HomeScreen> {
         osm.LatLng(currentUser.latitude, currentUser.longitude),
         osm.LatLng(newNeighbor.latitude, newNeighbor.longitude),
       );
-      _mapController.fitCamera(
+      _safeFitCamera(
         osm_map.CameraFit.bounds(
           bounds: bounds,
           padding: const EdgeInsets.all(75.0),
@@ -351,7 +393,7 @@ class _HomeScreenState extends State<HomeScreen> {
           osm.LatLng(currentUser.latitude, currentUser.longitude),
           osm.LatLng(newlyAdded.latitude, newlyAdded.longitude),
         );
-        _mapController.fitCamera(
+        _safeFitCamera(
           osm_map.CameraFit.bounds(
             bounds: bounds,
             padding: const EdgeInsets.all(75.0),
@@ -419,7 +461,7 @@ class _HomeScreenState extends State<HomeScreen> {
         await provider.updateCurrentLocation(position.latitude, position.longitude);
 
         // Smoothly pan map from fallback position to actual GPS location
-        _mapController.move(
+        _safeMapMove(
           osm.LatLng(position.latitude, position.longitude),
           15.5,
         );
@@ -441,10 +483,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final pos = await provider.fetchRealGpsPosition();
     if (pos != null && mounted) {
       await provider.updateCurrentLocation(pos.latitude, pos.longitude);
-      _mapController.move(osm.LatLng(pos.latitude, pos.longitude), 16.0);
+      _safeMapMove(osm.LatLng(pos.latitude, pos.longitude), 16.0);
     } else {
       final user = provider.currentUser;
-      _mapController.move(osm.LatLng(user.latitude, user.longitude), 15.5);
+      _safeMapMove(osm.LatLng(user.latitude, user.longitude), 15.5);
     }
   }
 
@@ -573,7 +615,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: GestureDetector(
             onTap: () {
               setState(() => _selectedNode = node);
-              _mapController.move(osm.LatLng(node.latitude, node.longitude), 16.0);
+              _safeMapMove(osm.LatLng(node.latitude, node.longitude), 16.0);
             },
             child: _buildUserAvatarMarker(
               node,
@@ -687,6 +729,10 @@ class _HomeScreenState extends State<HomeScreen> {
       sub.cancel();
     }
     _neighborSubscriptions.clear();
+    _isMapReady = false;
+    _pendingTargetPosition = null;
+    _pendingTargetZoom = null;
+    _pendingFitCamera = null;
     _mapController.dispose();
     super.dispose();
   }
@@ -695,6 +741,38 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final provider = context.watch<NodeLinkProvider>();
     final isLight = Theme.of(context).brightness == Brightness.light;
+
+    if (!provider.isUserInitialized) {
+      return Scaffold(
+        backgroundColor: isLight ? const Color(0xFFF1F5F9) : AppTheme.deepNavy,
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 48,
+                height: 48,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  color: isLight ? const Color(0xFF00A884) : const Color(0xFF00F0FF),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'INITIALIZING NODELINK...',
+                style: TextStyle(
+                  color: isLight ? const Color(0xFF475569) : AppTheme.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final currentUser = provider.currentUser;
     final connectedNodes = provider.connectedNodes;
     final groups = provider.groups;
@@ -758,15 +836,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       key: _scaffoldKey,
+      resizeToAvoidBottomInset: false,
       backgroundColor: isLight ? const Color(0xFFF1F5F9) : AppTheme.deepNavy,
       drawer: const SideMenuDrawer(),
-      body: Column(
+      body: Stack(
+        fit: StackFit.expand,
         children: [
-          // Expanded wrapper ensures FlutterMap fills the screen without collapsing
-          Expanded(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
                 // 1. FlutterMap with Dynamic Map Theming
                 osm_map.FlutterMap(
                   mapController: _mapController,
@@ -775,6 +850,20 @@ class _HomeScreenState extends State<HomeScreen> {
                     initialZoom: 14.5,
                     minZoom: 3.0,
                     maxZoom: 18.0,
+                    onMapReady: () {
+                      _isMapReady = true;
+                      if (_pendingTargetPosition != null) {
+                        final pos = _pendingTargetPosition!;
+                        final zoom = _pendingTargetZoom ?? 15.5;
+                        _pendingTargetPosition = null;
+                        _pendingTargetZoom = null;
+                        _safeMapMove(pos, zoom);
+                      } else if (_pendingFitCamera != null) {
+                        final fit = _pendingFitCamera!;
+                        _pendingFitCamera = null;
+                        _safeFitCamera(fit);
+                      }
+                    },
                     interactionOptions: osm_map.InteractionOptions(
                       // If locked, allow all gestures EXCEPT rotation. If unlocked, allow all.
                       flags: isNorthLocked
@@ -928,7 +1017,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 });
                               } else {
                                 // Tapping when unlocked: reset rotation to 0.0, restore glow and lock rotation
-                                _mapController.rotate(0.0);
+                                _safeRotate(0.0);
                                 setState(() {
                                   isNorthLocked = true;
                                   _currentRotation = 0.0;
@@ -1068,29 +1157,42 @@ class _HomeScreenState extends State<HomeScreen> {
                   left: 20,
                   right: 20,
                   bottom: 24,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Adaptive Polling HUD
-                      _buildAdaptivePollingHUD(provider, isLight),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(context).size.height * 0.42,
+                    ),
+                    child: SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Adaptive Polling HUD
+                          _buildAdaptivePollingHUD(provider, isLight),
 
-                      const SizedBox(height: 12),
+                          const SizedBox(height: 12),
 
-                      // Neighbor Tray or Empty State
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 300),
-                        child: hasNeighbors
-                            ? _buildPopulatedBottomTray(displayNeighbors, isLight)
-                            : _buildEmptyStateCard(isLight),
+                          // Neighbor Tray or Empty State
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 300),
+                            child: hasNeighbors
+                                ? _buildPopulatedBottomTray(displayNeighbors, isLight)
+                                : _buildEmptyStateCard(isLight),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
+                ),
+
+                // 10. Heads-Up Incoming Call Notification Popup Banner
+                const Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  child: CallPopupBanner(),
                 ),
               ],
             ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1340,7 +1442,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   return GestureDetector(
                     onTap: () {
                       setState(() => _selectedNode = node);
-                      _mapController.move(
+                      _safeMapMove(
                         osm.LatLng(node.latitude, node.longitude),
                         16.0,
                       );
@@ -1565,16 +1667,20 @@ class _HomeScreenState extends State<HomeScreen> {
                     : (isLight ? const Color(0xFF0F766E) : AppTheme.neonGreen),
               ),
               const SizedBox(width: 6),
-              Text(
-                isBatteryLow
-                    ? 'LOW BATTERY THROTTLE (20m)'
-                    : '$motion • Next Poll: $countdownStr',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: isBatteryLow
-                      ? AppTheme.warningRed
-                      : (isLight ? const Color(0xFF0F766E) : AppTheme.neonGreen),
+              Flexible(
+                child: Text(
+                  isBatteryLow
+                      ? 'LOW BATTERY THROTTLE (20m)'
+                      : '$motion • Next Poll: $countdownStr',
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: isBatteryLow
+                        ? AppTheme.warningRed
+                        : (isLight ? const Color(0xFF0F766E) : AppTheme.neonGreen),
+                  ),
                 ),
               ),
             ],

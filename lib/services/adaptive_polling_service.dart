@@ -213,41 +213,50 @@ class AdaptivePollingService {
   void _startRealSensorStream() {
     if (kIsWeb) return;
     try {
-      _sensorSubscription = userAccelerometerEventStream().listen((event) {
-        if (_isMockSimulationActive) return;
+      _sensorSubscription = userAccelerometerEventStream().listen(
+        (event) {
+          if (_isMockSimulationActive) return;
 
-        // Calculate 3D acceleration vector magnitude
-        final magnitude = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
-        _accelMagnitudes.add(magnitude);
-        if (_accelMagnitudes.length > _windowSize) {
-          _accelMagnitudes.removeAt(0);
-        }
+          // Calculate 3D acceleration vector magnitude
+          final magnitude = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
+          _accelMagnitudes.add(magnitude);
+          if (_accelMagnitudes.length > _windowSize) {
+            _accelMagnitudes.removeAt(0);
+          }
 
-        // Classify motion
-        final avg = _accelMagnitudes.reduce((a, b) => a + b) / _accelMagnitudes.length;
-        final variance = _accelMagnitudes
-                .map((m) => pow(m - avg, 2))
-                .reduce((a, b) => a + b) /
-            _accelMagnitudes.length;
+          // Classify motion
+          final avg = _accelMagnitudes.reduce((a, b) => a + b) / _accelMagnitudes.length;
+          final variance = _accelMagnitudes
+                  .map((m) => pow(m - avg, 2))
+                  .reduce((a, b) => a + b) /
+              _accelMagnitudes.length;
 
-        NodeMotionState detectedState;
-        if (variance < 0.25) {
-          detectedState = NodeMotionState.still;
-        } else if (variance < 1.8) {
-          detectedState = NodeMotionState.walking;
-        } else if (variance < 5.0) {
-          detectedState = NodeMotionState.running;
-        } else {
-          detectedState = NodeMotionState.inVehicle;
-        }
+          NodeMotionState detectedState;
+          if (variance < 0.25) {
+            detectedState = NodeMotionState.still;
+          } else if (variance < 1.8) {
+            detectedState = NodeMotionState.walking;
+          } else if (variance < 5.0) {
+            detectedState = NodeMotionState.running;
+          } else {
+            detectedState = NodeMotionState.inVehicle;
+          }
 
-        if (detectedState != _currentMotionState) {
-          _currentMotionState = detectedState;
-          onStateChanged?.call();
-        }
-      });
+          if (detectedState != _currentMotionState) {
+            _currentMotionState = detectedState;
+            onStateChanged?.call();
+          }
+        },
+        onError: (error) {
+          // Silently handle devices without physical accelerometer sensors (e.g. emulators, budget phones)
+          debugPrint('[AdaptivePollingService] Accelerometer unavailable or not supported: $error');
+          _sensorSubscription?.cancel();
+          _sensorSubscription = null;
+        },
+        cancelOnError: true,
+      );
     } catch (e) {
-      debugPrint('Sensor stream error: $e');
+      debugPrint('[AdaptivePollingService] Sensor stream error: $e');
     }
   }
 

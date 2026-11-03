@@ -29,6 +29,9 @@ class NodeUser {
     this.isSelf = false,
   });
 
+  String get phoneNumber => phone;
+  String? get avatarUrl => profilePicUrl ?? (avatarPath.startsWith('http') ? avatarPath : null);
+
   // Serialization strictly storing all details in Firebase Realtime Database
   Map<String, dynamic> toFirebaseJson() {
     return {

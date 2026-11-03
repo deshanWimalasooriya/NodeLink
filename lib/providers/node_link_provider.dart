@@ -13,6 +13,8 @@ import '../models/neighbor_group.dart';
 import '../services/adaptive_polling_service.dart';
 import '../services/firebase_sync_service.dart';
 import '../services/background_service.dart';
+import '../services/e2ee_service.dart';
+import '../services/chat_sync_service.dart';
 
 enum AppMapTheme {
   auto,        // Follows Light / Dark mode
@@ -23,8 +25,8 @@ enum AppMapTheme {
 }
 
 class NodeLinkProvider extends ChangeNotifier {
-  // Current Node
-  late NodeUser _currentUser;
+  // Current Node (Default fallback prevents any LateInitializationError)
+  NodeUser? _currentUser;
 
   // Active Peer Nodes (Neighbors) fetched from backend
   final List<NodeUser> _connectedNodes = [];
@@ -51,8 +53,24 @@ class NodeLinkProvider extends ChangeNotifier {
   // Neighbor Groups
   Map<String, NeighborGroup> _groups = {};
 
+  // Safe Fallback NodeUser when not yet initialized
+  static final NodeUser _fallbackUser = NodeUser(
+    id: '000 - 000',
+    name: 'Initializing...',
+    avatarPath: 'assets/avatars/nuwan.jpg',
+    status: 'Offline',
+    batteryLevel: 85,
+    latitude: 6.9271,
+    longitude: 79.8612,
+    lastUpdated: DateTime(2026),
+    isSelf: true,
+  );
+
   // Getters
-  NodeUser get currentUser => _currentUser;
+  NodeUser get currentUser => _currentUser ?? _fallbackUser;
+  NodeUser? get currentUserOrNull => _currentUser;
+  bool get isUserInitialized => _isInitialized && _currentUser != null;
+
   List<NodeUser> get connectedNodes => List.unmodifiable(_connectedNodes);
   TrackingSettings get settings => _settings;
   List<LocationRecord> get locationHistory => List.unmodifiable(_locationHistory);
@@ -111,101 +129,118 @@ class NodeLinkProvider extends ChangeNotifier {
   }
 
   Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedUsername = prefs.getString('username') ?? prefs.getString('nodelink_user_profile');
-    final savedPhone = prefs.getString('phoneNumber') ?? '';
-    final savedId = prefs.getString('nodeId') ?? prefs.getString('nodelink_node_id');
-    final savedProfilePic = prefs.getString('profilePicUrl') ?? prefs.getString('nodelink_profile_pic_url');
-    final savedLocalPhoto = prefs.getString('localPhotoPath');
-
-    // 1. Fetch real device GPS coordinates
-    final realPos = await fetchRealGpsPosition();
-    final initLat = realPos?.latitude ?? 6.9271;
-    final initLng = realPos?.longitude ?? 79.8612;
-
-    int currentBattery = 85;
     try {
-      currentBattery = await Battery().batteryLevel;
-    } catch (_) {}
+      final prefs = await SharedPreferences.getInstance();
+      final savedUsername = prefs.getString('username') ?? prefs.getString('nodelink_user_profile');
+      final savedPhone = prefs.getString('phoneNumber') ?? '';
+      final savedId = prefs.getString('nodeId') ?? prefs.getString('nodelink_node_id');
+      final savedProfilePic = prefs.getString('profilePicUrl') ?? prefs.getString('nodelink_profile_pic_url');
+      final savedLocalPhoto = prefs.getString('localPhotoPath');
 
-    final bool hasValidAuth = (savedUsername != null && savedUsername.trim().isNotEmpty) &&
-        (savedPhone.trim().isNotEmpty || prefs.getString('nodelink_user_profile') != null);
+      // 1. Fetch real device GPS coordinates with timeout
+      Position? realPos;
+      try {
+        realPos = await fetchRealGpsPosition().timeout(const Duration(seconds: 4));
+      } catch (_) {}
+      final initLat = realPos?.latitude ?? 6.9271;
+      final initLng = realPos?.longitude ?? 79.8612;
 
-    if (hasValidAuth) {
-      _hasAccount = true;
-      _currentUser = NodeUser(
-        id: savedId ?? '842 - 915',
-        name: savedUsername,
-        email: '$savedUsername@nodelink.com',
-        phone: savedPhone,
-        avatarPath: (savedProfilePic != null && savedProfilePic.isNotEmpty)
-            ? savedProfilePic
-            : (savedLocalPhoto ?? 'assets/avatars/nuwan.jpg'),
-        profilePicUrl: savedProfilePic,
-        status: 'Online',
-        isMoving: false,
-        batteryLevel: currentBattery,
-        latitude: initLat,
-        longitude: initLng,
-        lastUpdated: DateTime.now(),
-        isSelf: true,
+      int currentBattery = 85;
+      try {
+        currentBattery = await Battery().batteryLevel;
+      } catch (_) {}
+
+      final bool hasValidAuth = (savedUsername != null && savedUsername.trim().isNotEmpty) &&
+          (savedPhone.trim().isNotEmpty || prefs.getString('nodelink_user_profile') != null);
+
+      if (hasValidAuth) {
+        _hasAccount = true;
+        _currentUser = NodeUser(
+          id: savedId ?? '842 - 915',
+          name: savedUsername,
+          email: '$savedUsername@nodelink.com',
+          phone: savedPhone,
+          avatarPath: (savedProfilePic != null && savedProfilePic.isNotEmpty)
+              ? savedProfilePic
+              : (savedLocalPhoto ?? 'assets/avatars/nuwan.jpg'),
+          profilePicUrl: savedProfilePic,
+          status: 'Online',
+          isMoving: false,
+          batteryLevel: currentBattery,
+          latitude: initLat,
+          longitude: initLng,
+          lastUpdated: DateTime.now(),
+          isSelf: true,
+        );
+      } else {
+        _hasAccount = false;
+        _currentUser = NodeUser(
+          id: '842 - 915',
+          name: 'New Node',
+          avatarPath: 'assets/avatars/nuwan.jpg',
+          profilePicUrl: savedProfilePic,
+          status: 'Online',
+          batteryLevel: currentBattery,
+          latitude: initLat,
+          longitude: initLng,
+          lastUpdated: DateTime.now(),
+          isSelf: true,
+        );
+      }
+
+      // Load saved theme & map theme preferences
+      final savedTheme = prefs.getString('app_theme_mode');
+      if (savedTheme == 'light') {
+        _themeMode = ThemeMode.light;
+      } else {
+        _themeMode = ThemeMode.dark;
+      }
+
+      final savedMap = prefs.getString('app_map_theme');
+      if (savedMap != null) {
+        _mapTheme = AppMapTheme.values.firstWhere(
+          (e) => e.name == savedMap,
+          orElse: () => AppMapTheme.auto,
+        );
+      }
+
+      // Load saved settings
+      await _loadSavedSettings();
+
+      // Foreground service
+      await BackgroundService.initialize();
+
+      // If user already has an account, fetch actual data from Firebase backend
+      if (_hasAccount && _currentUser != null) {
+        try {
+          await _initFirebase().timeout(const Duration(seconds: 6));
+          _startFirebaseLiveSync();
+          await loadGroups();
+          await E2EEService.initKeys(myNodeId: _currentUser!.id);
+          ChatSyncService.instance.startInboxListener(myNodeId: _currentUser!.id);
+        } on TimeoutException catch (e) {
+          debugPrint('[NodeLinkProvider] Firebase sync timeout on init: $e. Operating with local data.');
+        } catch (e) {
+          debugPrint('[NodeLinkProvider] Firebase init exception: $e');
+        }
+      }
+
+      // Start adaptive polling service
+      await _adaptiveService.start(
+        settings: _settings,
+        onSync: _handleLocationSync,
+        onStateUpdate: () {
+          notifyListeners();
+        },
       );
-    } else {
-      _hasAccount = false;
-      _currentUser = NodeUser(
-        id: '842 - 915',
-        name: 'New Node',
-        avatarPath: 'assets/avatars/nuwan.jpg',
-        profilePicUrl: savedProfilePic,
-        status: 'Online',
-        batteryLevel: currentBattery,
-        latitude: initLat,
-        longitude: initLng,
-        lastUpdated: DateTime.now(),
-        isSelf: true,
-      );
+    } catch (e) {
+      debugPrint('[NodeLinkProvider] Critical initialization exception: $e');
+    } finally {
+      // Guaranteed safe initialization: ensure _currentUser is never null
+      _currentUser ??= _fallbackUser;
+      _isInitialized = true;
+      notifyListeners();
     }
-
-    // Load saved theme & map theme preferences
-    final savedTheme = prefs.getString('app_theme_mode');
-    if (savedTheme == 'light') {
-      _themeMode = ThemeMode.light;
-    } else {
-      _themeMode = ThemeMode.dark;
-    }
-
-    final savedMap = prefs.getString('app_map_theme');
-    if (savedMap != null) {
-      _mapTheme = AppMapTheme.values.firstWhere(
-        (e) => e.name == savedMap,
-        orElse: () => AppMapTheme.auto,
-      );
-    }
-
-    // Load saved settings
-    await _loadSavedSettings();
-
-    // Foreground service
-    await BackgroundService.initialize();
-
-    // If user already has an account, fetch actual data from Firebase backend
-    if (_hasAccount) {
-      await _initFirebase();
-      _startFirebaseLiveSync();
-      await loadGroups();
-    }
-
-    // Start adaptive polling service
-    await _adaptiveService.start(
-      settings: _settings,
-      onSync: _handleLocationSync,
-      onStateUpdate: () {
-        notifyListeners();
-      },
-    );
-
-    _isInitialized = true;
-    notifyListeners();
   }
 
   /// App Theme & Map Theme Engine
@@ -238,10 +273,17 @@ class NodeLinkProvider extends ChangeNotifier {
 
   /// Neighbor Groups Management
   Future<void> loadGroups() async {
-    if (_currentUser.id.isNotEmpty) {
-      final fetched = await FirebaseSyncService.fetchGroups(_currentUser.id);
-      _groups = fetched;
-      notifyListeners();
+    try {
+      if (currentUser.id.isNotEmpty && currentUser.id != '000 - 000') {
+        final fetched = await FirebaseSyncService.fetchGroups(currentUser.id)
+            .timeout(const Duration(seconds: 5));
+        _groups = fetched;
+        notifyListeners();
+      }
+    } on TimeoutException catch (e) {
+      debugPrint('[NodeLinkProvider] Timeout fetching groups: $e. Retaining local groups.');
+    } catch (e) {
+      debugPrint('[NodeLinkProvider] Error loading groups: $e');
     }
   }
 
@@ -250,21 +292,36 @@ class NodeLinkProvider extends ChangeNotifier {
     final group = NeighborGroup(id: groupId, name: name, members: {});
     _groups[groupId] = group;
     notifyListeners();
-    await FirebaseSyncService.saveGroup(_currentUser.id, group);
+    try {
+      await FirebaseSyncService.saveGroup(currentUser.id, group)
+          .timeout(const Duration(seconds: 5));
+    } catch (e) {
+      debugPrint('Error saving group: $e');
+    }
   }
 
   Future<void> updateGroupMembers(String groupId, Map<String, bool> members) async {
     if (_groups.containsKey(groupId)) {
       _groups[groupId] = _groups[groupId]!.copyWith(members: members);
       notifyListeners();
-      await FirebaseSyncService.updateGroupMembers(_currentUser.id, groupId, members);
+      try {
+        await FirebaseSyncService.updateGroupMembers(currentUser.id, groupId, members)
+            .timeout(const Duration(seconds: 5));
+      } catch (e) {
+        debugPrint('Error updating group members: $e');
+      }
     }
   }
 
   Future<void> deleteGroup(String groupId) async {
     _groups.remove(groupId);
     notifyListeners();
-    await FirebaseSyncService.deleteGroup(_currentUser.id, groupId);
+    try {
+      await FirebaseSyncService.deleteGroup(currentUser.id, groupId)
+          .timeout(const Duration(seconds: 5));
+    } catch (e) {
+      debugPrint('Error deleting group: $e');
+    }
   }
 
   /// Initialize newly created account from RegistrationSetupScreen / CreateAccountScreen
@@ -285,8 +342,8 @@ class NodeLinkProvider extends ChangeNotifier {
 
     // 1. Fetch real physical GPS position
     final realPos = await fetchRealGpsPosition();
-    final realLat = realPos?.latitude ?? _currentUser.latitude;
-    final realLng = realPos?.longitude ?? _currentUser.longitude;
+    final realLat = realPos?.latitude ?? currentUser.latitude;
+    final realLng = realPos?.longitude ?? currentUser.longitude;
 
     // 2. Fetch real battery
     int realBattery = 85;
@@ -330,43 +387,56 @@ class NodeLinkProvider extends ChangeNotifier {
     }
 
     // 3. STORE NEW ACCOUNT TO FIREBASE REALTIME DATABASE at /users/<nodeId>
-    await FirebaseSyncService.instantiateUserRecord(
-      nodeId: secureNodeId,
-      name: name,
-      phoneNumber: phoneNumber,
-      profilePicUrl: profilePicUrl ?? '',
-      latitude: realLat,
-      longitude: realLng,
-      batteryLevel: realBattery,
-    );
-    await FirebaseSyncService.syncNodeLocation(node: _currentUser);
-
-    // 4. Verify by re-fetching actual data from Firebase backend
-    final backendUser = await FirebaseSyncService.fetchNode(secureNodeId);
-    if (backendUser != null) {
-      _currentUser = backendUser.copyWith(
-        isSelf: true,
+    try {
+      await FirebaseSyncService.instantiateUserRecord(
+        nodeId: secureNodeId,
+        name: name,
+        phoneNumber: phoneNumber,
+        profilePicUrl: profilePicUrl ?? '',
         latitude: realLat,
         longitude: realLng,
-        phone: phoneNumber,
-      );
+        batteryLevel: realBattery,
+      ).timeout(const Duration(seconds: 5));
+      await FirebaseSyncService.syncNodeLocation(node: currentUser)
+          .timeout(const Duration(seconds: 5));
+    } catch (e) {
+      debugPrint('[NodeLinkProvider] Error syncing new account to Firebase: $e');
     }
+
+    // 4. Verify by re-fetching actual data from Firebase backend
+    try {
+      final backendUser = await FirebaseSyncService.fetchNode(secureNodeId)
+          .timeout(const Duration(seconds: 4));
+      if (backendUser != null) {
+        _currentUser = backendUser.copyWith(
+          isSelf: true,
+          latitude: realLat,
+          longitude: realLng,
+          phone: phoneNumber,
+        );
+      }
+    } catch (_) {}
 
     await loadGroups();
     _startFirebaseLiveSync();
+    await E2EEService.initKeys(myNodeId: secureNodeId);
+    ChatSyncService.instance.startInboxListener(myNodeId: secureNodeId);
     notifyListeners();
   }
 
   /// Update current device coordinates and sync with Firebase
   Future<void> updateCurrentLocation(double lat, double lng) async {
-    _currentUser = _currentUser.copyWith(
+    _currentUser = currentUser.copyWith(
       latitude: lat,
       longitude: lng,
       lastUpdated: DateTime.now(),
     );
 
     if (_hasAccount && _settings.alwaysShareLocation) {
-      await FirebaseSyncService.syncNodeLocation(node: _currentUser);
+      try {
+        await FirebaseSyncService.syncNodeLocation(node: currentUser)
+            .timeout(const Duration(seconds: 4));
+      } catch (_) {}
     }
 
     notifyListeners();
@@ -392,17 +462,19 @@ class NodeLinkProvider extends ChangeNotifier {
   Future<void> _initFirebase() async {
     try {
       // 1. Fetch user's existing record from backend if present
-      final remoteSelf = await FirebaseSyncService.fetchNode(_currentUser.id);
+      final remoteSelf = await FirebaseSyncService.fetchNode(currentUser.id)
+          .timeout(const Duration(seconds: 4));
       if (remoteSelf != null) {
         _currentUser = remoteSelf.copyWith(
           isSelf: true,
-          latitude: _currentUser.latitude,
-          longitude: _currentUser.longitude,
+          latitude: currentUser.latitude,
+          longitude: currentUser.longitude,
         );
       }
 
       // 2. Sync latest GPS coordinates to Firebase
-      await FirebaseSyncService.syncNodeLocation(node: _currentUser);
+      await FirebaseSyncService.syncNodeLocation(node: currentUser)
+          .timeout(const Duration(seconds: 4));
 
       // 3. Fetch actual active connections from backend
       await fetchRemoteNodes();
@@ -423,17 +495,19 @@ class NodeLinkProvider extends ChangeNotifier {
   Future<void> fetchRemoteNodes() async {
     try {
       // 1. Refresh self from backend to display latest cloud data
-      final backendSelf = await FirebaseSyncService.fetchNode(_currentUser.id);
+      final backendSelf = await FirebaseSyncService.fetchNode(currentUser.id)
+          .timeout(const Duration(seconds: 4));
       if (backendSelf != null) {
-        _currentUser = _currentUser.copyWith(
-          name: backendSelf.name.isNotEmpty ? backendSelf.name : _currentUser.name,
+        _currentUser = currentUser.copyWith(
+          name: backendSelf.name.isNotEmpty ? backendSelf.name : currentUser.name,
           status: backendSelf.status,
-          profilePicUrl: backendSelf.profilePicUrl ?? _currentUser.profilePicUrl,
+          profilePicUrl: backendSelf.profilePicUrl ?? currentUser.profilePicUrl,
         );
       }
 
       // 2. Fetch actual active connections list from Firebase
-      final activeIds = await FirebaseSyncService.fetchActiveConnections(_currentUser.id);
+      final activeIds = await FirebaseSyncService.fetchActiveConnections(currentUser.id)
+          .timeout(const Duration(seconds: 4));
 
       if (activeIds.isEmpty) {
         // Zero active connections in backend: Keep empty list
@@ -445,7 +519,8 @@ class NodeLinkProvider extends ChangeNotifier {
       }
 
       // 3. Fetch each connected neighbor's actual data from backend
-      final allNodes = await FirebaseSyncService.fetchAllNodes();
+      final allNodes = await FirebaseSyncService.fetchAllNodes()
+          .timeout(const Duration(seconds: 4));
       final List<NodeUser> actualNeighbors = [];
 
       for (final connId in activeIds) {
@@ -453,7 +528,7 @@ class NodeLinkProvider extends ChangeNotifier {
         final node = allNodes[connId] ??
             allNodes[FirebaseSyncService.sanitizeKey(connId)] ??
             allNodes[rawConnId];
-        if (node != null && node.id != _currentUser.id) {
+        if (node != null && node.id != currentUser.id) {
           if (!actualNeighbors.any((n) => n.id == node.id)) {
             actualNeighbors.add(node);
           }
@@ -463,6 +538,8 @@ class NodeLinkProvider extends ChangeNotifier {
       _connectedNodes.clear();
       _connectedNodes.addAll(actualNeighbors);
       notifyListeners();
+    } on TimeoutException catch (e) {
+      debugPrint('[NodeLinkProvider] Timeout fetching remote nodes: $e. Retaining cached nodes.');
     } catch (e) {
       debugPrint('Error in fetchRemoteNodes: $e');
     }
@@ -476,7 +553,7 @@ class NodeLinkProvider extends ChangeNotifier {
     required int batteryLevel,
     required int currentIntervalSec,
   }) async {
-    _currentUser = _currentUser.copyWith(
+    _currentUser = currentUser.copyWith(
       latitude: latitude,
       longitude: longitude,
       isMoving: motionState.isActive,
@@ -504,7 +581,10 @@ class NodeLinkProvider extends ChangeNotifier {
 
     // Sync actual coordinates to Firebase Realtime Database
     if (_hasAccount && _settings.alwaysShareLocation) {
-      await FirebaseSyncService.syncNodeLocation(node: _currentUser);
+      try {
+        await FirebaseSyncService.syncNodeLocation(node: currentUser)
+            .timeout(const Duration(seconds: 4));
+      } catch (_) {}
     }
 
     if (_hasAccount && _connectedNodes.isNotEmpty) {
@@ -520,15 +600,18 @@ class NodeLinkProvider extends ChangeNotifier {
     String? phone,
     String? email,
   }) async {
-    _currentUser = _currentUser.copyWith(
-      name: name ?? _currentUser.name,
-      phone: phone ?? _currentUser.phone,
-      email: email ?? _currentUser.email,
+    _currentUser = currentUser.copyWith(
+      name: name ?? currentUser.name,
+      phone: phone ?? currentUser.phone,
+      email: email ?? currentUser.email,
     );
     notifyListeners();
 
     if (_hasAccount) {
-      await FirebaseSyncService.syncNodeLocation(node: _currentUser);
+      try {
+        await FirebaseSyncService.syncNodeLocation(node: currentUser)
+            .timeout(const Duration(seconds: 4));
+      } catch (_) {}
     }
   }
 
@@ -572,7 +655,10 @@ class NodeLinkProvider extends ChangeNotifier {
     if (cleanCode.isEmpty) return false;
 
     // 1. Two-way database write: User A <-> User B simultaneously
-    await FirebaseSyncService.linkNodes(_currentUser.id, inputCode);
+    try {
+      await FirebaseSyncService.linkNodes(currentUser.id, inputCode)
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {}
 
     // 2. Fetch neighbor data from Firebase backend
     NodeUser? remoteNode = await FirebaseSyncService.fetchNode(inputCode);
@@ -606,8 +692,8 @@ class NodeLinkProvider extends ChangeNotifier {
       status: 'Active',
       isMoving: true,
       batteryLevel: 75 + random.nextInt(20),
-      latitude: _currentUser.latitude + (random.nextDouble() - 0.5) * 0.015,
-      longitude: _currentUser.longitude + (random.nextDouble() - 0.5) * 0.015,
+      latitude: currentUser.latitude + (random.nextDouble() - 0.5) * 0.015,
+      longitude: currentUser.longitude + (random.nextDouble() - 0.5) * 0.015,
       lastUpdated: DateTime.now(),
     );
 
@@ -616,8 +702,12 @@ class NodeLinkProvider extends ChangeNotifier {
     notifyListeners();
 
     // Persist new neighbor to Firebase backend & link
-    await FirebaseSyncService.syncNodeLocation(node: newNode);
-    await FirebaseSyncService.linkNodes(_currentUser.id, newNode.id);
+    try {
+      await FirebaseSyncService.syncNodeLocation(node: newNode)
+          .timeout(const Duration(seconds: 4));
+      await FirebaseSyncService.linkNodes(currentUser.id, newNode.id)
+          .timeout(const Duration(seconds: 4));
+    } catch (_) {}
 
     return true;
   }
@@ -643,19 +733,19 @@ class NodeLinkProvider extends ChangeNotifier {
   /// update Realtime Database, update local NodeUser state and SharedPreferences
   Future<String?> uploadAndSetProfilePhoto(Uint8List imageBytes) async {
     final downloadUrl = await FirebaseSyncService.uploadProfilePhoto(
-      nodeId: _currentUser.id,
+      nodeId: currentUser.id,
       imageBytes: imageBytes,
     );
 
     if (downloadUrl != null && downloadUrl.isNotEmpty) {
       // Explicitly write URL to user's Realtime Database node
       await FirebaseSyncService.updateProfilePhotoUrl(
-        nodeId: _currentUser.id,
+        nodeId: currentUser.id,
         photoUrl: downloadUrl,
       );
 
       // Update local state so UI reflects the change immediately
-      _currentUser = _currentUser.copyWith(
+      _currentUser = currentUser.copyWith(
         profilePicUrl: downloadUrl,
         avatarPath: downloadUrl,
       );
@@ -676,6 +766,7 @@ class NodeLinkProvider extends ChangeNotifier {
     _firebasePollTimer?.cancel();
     _firebasePollTimer = null;
     _adaptiveService.stop();
+    ChatSyncService.instance.stopInboxListener();
 
     // Clear local session storage
     final prefs = await SharedPreferences.getInstance();
@@ -685,18 +776,7 @@ class NodeLinkProvider extends ChangeNotifier {
     _hasAccount = false;
     _connectedNodes.clear();
     _locationHistory.clear();
-    _currentUser = NodeUser(
-      id: '000 - 000',
-      name: '',
-      avatarPath: 'assets/avatars/nuwan.jpg',
-      profilePicUrl: null,
-      status: 'Offline',
-      batteryLevel: 85,
-      latitude: 6.9271,
-      longitude: 79.8612,
-      lastUpdated: DateTime.now(),
-      isSelf: true,
-    );
+    _currentUser = _fallbackUser;
 
     notifyListeners();
   }

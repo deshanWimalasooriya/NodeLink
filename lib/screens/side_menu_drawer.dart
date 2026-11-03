@@ -11,6 +11,7 @@ import 'settings_screen.dart';
 import 'user_profile_screen.dart';
 import 'battery_management_screen.dart';
 import 'location_history_screen.dart';
+import 'chat/chat_list_screen.dart';
 
 class SideMenuDrawer extends StatelessWidget {
   const SideMenuDrawer({super.key});
@@ -135,6 +136,19 @@ class SideMenuDrawer extends StatelessWidget {
                       label: 'Live Map',
                       isActive: true,
                       onTap: () => Navigator.of(context).pop(),
+                    ),
+                    const SizedBox(height: 8),
+                    _buildNavItem(
+                      context,
+                      icon: Icons.chat_bubble_outline_rounded,
+                      label: 'Chats',
+                      isActive: false,
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const ChatListScreen()),
+                        );
+                      },
                     ),
                     const SizedBox(height: 8),
                     _buildNavItem(

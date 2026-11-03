@@ -333,51 +333,59 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Left side pills
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: isLight ? const Color(0xFF059669) : AppTheme.neonGreen,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: isLight
-                              ? AppTheme.lightCardShadow
-                              : AppTheme.neonGlow(blur: 10, opacity: 0.3),
-                        ),
-                        child: Text(
-                          'Node ID: ${user.id}',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w900,
-                            color: isLight ? Colors.white : AppTheme.deepNavy,
+                  // Left side pills wrapped in Expanded to prevent horizontal overflow
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isLight ? const Color(0xFF059669) : AppTheme.neonGreen,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: isLight
+                                ? AppTheme.lightCardShadow
+                                : AppTheme.neonGlow(blur: 10, opacity: 0.3),
+                          ),
+                          child: Text(
+                            'Node ID: ${user.id}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                              color: isLight ? Colors.white : AppTheme.deepNavy,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: isLight
-                              ? const Color(0xFF0284C7)
-                              : AppTheme.electricCyan.withValues(alpha: 0.8),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '${provider.connectedNodes.length} Active Connections',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: isLight
+                                ? const Color(0xFF0284C7)
+                                : AppTheme.electricCyan.withValues(alpha: 0.8),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${provider.connectedNodes.length} Active Connections',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
+                  const SizedBox(width: 8),
 
                   // Right side Action Icons: Copy Link & Share QR
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       _buildQuickAction(
                         context: context,
